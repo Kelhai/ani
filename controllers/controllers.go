@@ -1,29 +1,12 @@
 package controllers
 
 import (
-	"fmt"
-	"net/http"
-
 	"github.com/labstack/echo/v5"
-	"github.com/labstack/echo/v5/middleware"
 )
 
-func SetupAllRoutes() {
-	e := echo.New()
-	fmt.Println(`             _ 
-            (_)
- _____ ____  _ 
-(____ |  _ \| |
-/ ___ | | | | |
-\_____|_| |_|_|
-               `)
-	e.Use(middleware.RequestLogger())
+func SetupAllRoutes(e *echo.Echo) {
 
-	e.GET("/", func(c *echo.Context) error {
-		return c.String(http.StatusOK, "Hello, World!")
-	})
+	// routes
+	setupAuthRoutes(e)
 
-	if err := e.Start(":52971"); err != nil {
-		e.Logger.Error("failed to start server", "error", err)
-	}
 }
