@@ -13,4 +13,3 @@ func SetupStorages() error {
 
 	return nil
 }
-

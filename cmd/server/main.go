@@ -9,17 +9,18 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/Kelhai/ani/config"
 	"github.com/Kelhai/ani/controllers"
 	"github.com/Kelhai/ani/services"
-	"github.com/joho/godotenv"
 	"github.com/labstack/echo/v5"
 	"github.com/labstack/echo/v5/middleware"
 )
 
 func main() {
-	err := godotenv.Load()
+	err := config.SetupConfig()
 	if err != nil {
-		log.Fatal("Failed to load .env")
+		log.Printf("Failed to load config: %s", err.Error())
+		os.Exit(1)
 	}
 
 	e := echo.New()
@@ -60,4 +61,3 @@ func main() {
 		e.Logger.Error("failed to start server", "error", err)
 	}
 }
-

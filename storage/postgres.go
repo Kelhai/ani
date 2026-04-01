@@ -23,7 +23,11 @@ func SetupPgStorage() PgStorage {
 		config.POSTGRES_PORT,
 		config.POSTGRES_DB,
 	)
-	sqldb := sql.OpenDB(pgdriver.NewConnector(pgdriver.WithDSN(dsn)))
-	return PgStorage{db: bun.NewDB(sqldb, pgdialect.New())}
-}
 
+	sqldb := sql.OpenDB(pgdriver.NewConnector(pgdriver.WithDSN(dsn)))
+	db := bun.NewDB(sqldb, pgdialect.New())
+
+	createAuthSchema(db)
+
+	return PgStorage{db: db}
+}

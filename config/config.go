@@ -11,12 +11,12 @@ import (
 )
 
 var (
-	POSTGRES_HOST string
-	POSTGRES_USER string
+	POSTGRES_HOST     string
+	POSTGRES_USER     string
 	POSTGRES_PASSWORD string
-	POSTGRES_PORT int
-	POSTGRES_DB string
-	
+	POSTGRES_PORT     int
+	POSTGRES_DB       string
+
 	SERVER_PORT int
 )
 
@@ -78,4 +78,3 @@ func SetupConfig() error {
 
 	return nil
 }
-
