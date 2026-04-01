@@ -3,17 +3,25 @@ package main
 import (
 	"context"
 	"fmt"
+	"log"
 	"os"
 	"os/signal"
 	"syscall"
 	"time"
 
 	"github.com/Kelhai/ani/controllers"
+	"github.com/Kelhai/ani/services"
+	"github.com/joho/godotenv"
 	"github.com/labstack/echo/v5"
 	"github.com/labstack/echo/v5/middleware"
 )
 
 func main() {
+	err := godotenv.Load()
+	if err != nil {
+		log.Fatal("Failed to load .env")
+	}
+
 	e := echo.New()
 
 	// middleware
@@ -27,6 +35,7 @@ func main() {
 		},
 	}))
 
+	services.SetupStorages()
 	controllers.SetupAllRoutes(e)
 
 	// start server
