@@ -3,17 +3,26 @@ package main
 import (
 	"context"
 	"fmt"
+	"log"
 	"os"
 	"os/signal"
 	"syscall"
 	"time"
 
+	"github.com/Kelhai/ani/config"
 	"github.com/Kelhai/ani/controllers"
+	"github.com/Kelhai/ani/services"
 	"github.com/labstack/echo/v5"
 	"github.com/labstack/echo/v5/middleware"
 )
 
 func main() {
+	err := config.SetupConfig()
+	if err != nil {
+		log.Printf("Failed to load config: %s", err.Error())
+		os.Exit(1)
+	}
+
 	e := echo.New()
 
 	// middleware
@@ -27,6 +36,7 @@ func main() {
 		},
 	}))
 
+	services.SetupStorages()
 	controllers.SetupAllRoutes(e)
 
 	// start server
@@ -51,4 +61,3 @@ func main() {
 		e.Logger.Error("failed to start server", "error", err)
 	}
 }
-

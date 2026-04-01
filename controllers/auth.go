@@ -26,7 +26,7 @@ func login(c *echo.Context) error {
 		return c.String(http.StatusBadRequest, fmt.Sprintf("Bad json: %s", err.Error()))
 	}
 
-	user, err := authService.Login(bodyUser.Username, bodyUser.Password)
+	_, err = authService.Login(bodyUser.Username, bodyUser.Password)
 
 	return nil
 }
