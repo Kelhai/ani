@@ -7,14 +7,13 @@ import (
 )
 
 type User struct {
-	Id uuid.UUID
-	Username string
-	PasswordHash []byte
+	Id           uuid.UUID `json:"id"`
+	Username     string    `json:"username"`
+	PasswordHash string    `json:"-"`
 }
 
 type Session struct {
-	UserId uuid.UUID
-	Token string
+	Id        uuid.UUID
+	UserId    uuid.UUID
 	ExpiresAt time.Time
 }
-

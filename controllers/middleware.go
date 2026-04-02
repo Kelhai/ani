@@ -1,15 +1,23 @@
 package controllers
 
 import (
+	"log"
 	"time"
 
+	"github.com/google/uuid"
 	"github.com/labstack/echo/v5"
 	"github.com/labstack/echo/v5/middleware"
 )
 
 var SessionMiddleware = middleware.KeyAuth(
 	func(c *echo.Context, token string, source middleware.ExtractorSource) (bool, error) {
-		session, err := authService.GetSessionByToken(token)
+		tk, err := uuid.Parse(token)
+		if err != nil {
+			log.Println("Failed to parse UUID")
+			return false, nil
+		}
+
+		session, err := authService.GetSessionByToken(tk)
 		if err != nil {
 			return false, nil
 		}
