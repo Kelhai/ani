@@ -14,4 +14,3 @@ func setupMessageRoutes(e *echo.Echo) {
 func sendMessage(c *echo.Context) error {
 	return nil
 }
-

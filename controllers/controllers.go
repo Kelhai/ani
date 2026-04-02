@@ -8,5 +8,6 @@ func SetupAllRoutes(e *echo.Echo) {
 
 	// routes
 	setupAuthRoutes(e)
-
+	
+	setupServices()
 }

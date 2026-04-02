@@ -3,6 +3,7 @@ package storage
 import (
 	"context"
 	"fmt"
+	"log"
 	"time"
 
 	"github.com/Kelhai/ani/common"
@@ -11,20 +12,19 @@ import (
 )
 
 type User struct {
-    bun.BaseModel `bun:"table:users"`
+	bun.BaseModel `bun:"table:users"`
 
-    Id           uuid.UUID `bun:"id,pk,type:uuid,default:gen_random_uuid()"`
-    Username     string    `bun:"username,unique,notnull"`
-    PasswordHash []byte    `bun:"password_hash,type:bytea,notnull"`
+	Id           uuid.UUID `bun:"id,pk,type:uuid"`
+	Username     string    `bun:"username,unique,notnull"`
+	PasswordHash string    `bun:"password_hash,notnull"`
 }
 
 type Session struct {
-    bun.BaseModel `bun:"table:sessions"`
+	bun.BaseModel `bun:"table:sessions"`
 
-    Id        uuid.UUID `bun:"id,pk,type:uuid,default:gen_random_uuid()"`
-    UserId    uuid.UUID `bun:"user_id,type:uuid,notnull"`
-    Token     string    `bun:"token,unique,notnull"`
-    ExpiresAt time.Time `bun:"expires_at,notnull"`
+	Id        uuid.UUID `bun:"id,pk,type:uuid"`
+	UserId    uuid.UUID `bun:"user_id,type:uuid,notnull"`
+	ExpiresAt time.Time `bun:"expires_at,notnull"`
 }
 
 func createAuthSchema(db *bun.DB) {
@@ -38,20 +38,34 @@ func createAuthSchema(db *bun.DB) {
 func (pgs PgStorage) GetUserByUsername(username string) (*common.User, error) {
 	user := User{}
 	err := pgs.db.NewSelect().
-		Model(user).
+		Model(&user).
 		Where("username = ?", username).
 		Scan(context.Background())
 	if err != nil {
 		return nil, fmt.Errorf("Failed to get user: %w", err)
 	}
 	return &common.User{
-		Id: user.Id,
-		Username: user.Username,
+		Id:           user.Id,
+		Username:     user.Username,
 		PasswordHash: user.PasswordHash,
 	}, nil
 }
 
-func (pgs PgStorage) GetSessionByToken(token string) (*common.Session, error) {
+func (pgs PgStorage) AddUser(user common.User) error {
+	pgUser := User{
+		Id:           user.Id,
+		Username:     user.Username,
+		PasswordHash: user.PasswordHash,
+	}
+	_, err := pgs.db.NewInsert().Model(&pgUser).Exec(context.Background())
+	if err != nil {
+		log.Printf("Failed to insert user: %s", err.Error())
+		return fmt.Errorf("Failed to insert user: %w: %w", common.ErrPgInsertFailed, err)
+	}
+	return nil
+}
+
+func (pgs PgStorage) GetSessionByToken(token uuid.UUID) (*common.Session, error) {
 	session := &Session{}
 	err := pgs.db.NewSelect().
 		Model(session).
@@ -61,9 +75,47 @@ func (pgs PgStorage) GetSessionByToken(token string) (*common.Session, error) {
 		return nil, fmt.Errorf("failed to get session: %w", err)
 	}
 	return &common.Session{
-		UserId: session.Id,
-		Token: session.Token,
+		UserId:    session.Id,
 		ExpiresAt: session.ExpiresAt,
 	}, nil
 }
 
+func (pgs PgStorage) GetSessionByUser(userId uuid.UUID) (*common.Session, error) {
+	session := &Session{}
+	err := pgs.db.NewSelect().
+		Model(session).
+		Where("user_id = ?", userId).
+		Scan(context.Background())
+	if err != nil {
+		return nil, common.ErrNotFound
+	}
+	return &common.Session{
+		Id:        session.Id,
+		UserId:    session.UserId,
+		ExpiresAt: session.ExpiresAt,
+	}, nil
+}
+
+func (pgs PgStorage) NewSession(userId uuid.UUID) (*common.Session, error) {
+	id, err := uuid.NewV7()
+	if err != nil {
+		return nil, common.ErrUuidFailed
+	}
+
+	pgSession := Session{
+		Id:        id,
+		UserId:    userId,
+		ExpiresAt: time.Now(),
+	}
+	_, err = pgs.db.NewInsert().Model(&pgSession).Exec(context.Background())
+	if err != nil {
+		log.Printf("Failed to insert new session: %s", err.Error())
+		return nil, fmt.Errorf("Failed to insert session: %w: %w", common.ErrPgInsertFailed, err)
+	}
+
+	return &common.Session{
+		Id:        pgSession.Id,
+		UserId:    userId,
+		ExpiresAt: pgSession.ExpiresAt,
+	}, nil
+}
