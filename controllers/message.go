@@ -1,11 +1,13 @@
 package controllers
 
 import (
+	"database/sql"
 	"errors"
 	"log"
 	"net/http"
 
 	"github.com/Kelhai/ani/common"
+	"github.com/Kelhai/ani/storage"
 	"github.com/google/uuid"
 	"github.com/labstack/echo/v5"
 )
@@ -16,7 +18,7 @@ type conversationResponse struct {
 }
 
 func setupMessageRoutes(e *echo.Echo) {
-	g := e.Group("/messages")
+	g := e.Group("/messages", SessionMiddleware)
 
 	g.POST("/conversation", createConversation)
 	g.POST("/m/:conversationId", sendMessageToConversation)
@@ -26,11 +28,60 @@ func setupMessageRoutes(e *echo.Echo) {
 }
 
 func getMessagesFromConversation(c *echo.Context) error {
-	return nil
+	userId := c.Get("userId").(uuid.UUID)
+	conversationId, err := uuid.Parse(c.Param("conversationId"))
+	if err != nil {
+		return echo.NewHTTPError(http.StatusBadRequest, "invalid conversation id")
+	}
+
+	err = messageService.CheckConversationMember(userId, conversationId)
+	if err != nil {
+		if errors.Is(err, common.ErrNotFound) {
+			return c.NoContent(http.StatusUnauthorized)
+		}
+		return echo.NewHTTPError(http.StatusInternalServerError, "failed to check conversation")
+	}
+
+	messages, err := messageService.GetMessages(conversationId)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return c.JSON(http.StatusOK, []storage.Message{})
+		}
+		return echo.NewHTTPError(http.StatusInternalServerError, "failed to get messages")
+	}
+
+	return c.JSON(http.StatusOK, messages)
 }
 
 func getMessagesFromConversationSince(c *echo.Context) error {
-	return nil
+	userId := c.Get("userId").(uuid.UUID)
+	messageId, err := uuid.Parse(c.Param("messageId"))
+	if err != nil {
+		return echo.NewHTTPError(http.StatusBadRequest, "invalid conversation id")
+	}
+
+	message, err := messageService.GetMessage(messageId)
+	if err != nil {
+		return echo.NewHTTPError(http.StatusBadRequest, "no such message")
+	}
+
+	err = messageService.CheckConversationMember(userId, message.ConversationId)
+	if err != nil {
+		if errors.Is(err, common.ErrNotFound) {
+			return c.NoContent(http.StatusUnauthorized)
+		}
+		return echo.NewHTTPError(http.StatusInternalServerError, "failed to check conversation")
+	}
+
+	messages, err := messageService.GetMessagesSince(messageId)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return c.JSON(http.StatusOK, []storage.Message{})
+		}
+		return echo.NewHTTPError(http.StatusInternalServerError, "failed to get messages")
+	}
+
+	return c.JSON(http.StatusOK, messages)
 }
 
 func createConversation(c *echo.Context) error {
@@ -66,7 +117,7 @@ func sendMessageToConversation(c *echo.Context) error {
 		return echo.NewHTTPError(http.StatusBadRequest, "invalid request")
 	}
 
-	senderId := c.Get("userID").(uuid.UUID)
+	senderId := c.Get("userId").(uuid.UUID)
 
 	messageId, err := messageService.SendMessageToConversation(body.Message, senderId, conversationId)
 	if err != nil {
@@ -113,7 +164,7 @@ func getConversations(c *echo.Context) error {
 		return c.NoContent(http.StatusInternalServerError)
 	}
 
-	response := make([]conversationResponse, len(conversations))
+	response := make([]conversationResponse, 0, len(conversations))
 	for _, conversation := range conversations {
 		response = append(response, conversationResponse{
 			Id: conversation.Id,

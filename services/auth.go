@@ -100,3 +100,15 @@ func (as AuthService) GetUsernamesByIds(userIds []uuid.UUID) (map[uuid.UUID]stri
 	return users, nil
 }
 
+func (as AuthService) GetUserById(userId uuid.UUID) (*common.User, error) {
+	user, err := pgStorage.GetUser(userId)
+	if err != nil {
+		return nil, err
+	}
+
+	return &common.User{
+		Id: user.Id,
+		Username: user.Username,
+	}, nil
+}
+

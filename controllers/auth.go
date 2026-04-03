@@ -16,6 +16,7 @@ func setupAuthRoutes(e *echo.Echo) {
 
 	g.POST("/login", login)
 	g.POST("/register", register)
+	g.GET("/user/:userId", getUser, SessionMiddleware)
 }
 
 type loginUser struct {
@@ -73,3 +74,21 @@ func register(c *echo.Context) error {
 
 	return c.JSON(http.StatusCreated, user)
 }
+
+func getUser(c *echo.Context) error {
+	userId, err := uuid.Parse(c.Param("userId"))
+	if err != nil {
+		return echo.NewHTTPError(http.StatusBadRequest, "invalid user id")
+	}
+
+	user, err := authService.GetUserById(userId)
+	if err != nil {
+		return echo.NewHTTPError(http.StatusNotFound, "user not found")
+	}
+	return c.JSON(http.StatusOK, struct{
+		Username string `json:"username"`
+	}{
+		Username: user.Username,
+	})
+}
+

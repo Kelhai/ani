@@ -5,7 +5,6 @@ import (
 	"errors"
 	"fmt"
 	"log"
-	"maps"
 	"slices"
 
 	"github.com/Kelhai/ani/common"
@@ -19,6 +18,34 @@ func SetupMessageService() MessageService {
 	return MessageService{}
 }
 
+func (ms MessageService) GetMessage(msgId uuid.UUID) (*storage.Message, error) {
+	return pgStorage.GetMessageById(msgId)
+}
+
+func (ms MessageService) GetMessagesSince(since uuid.UUID) ([]storage.Message, error) {
+	return pgStorage.GetMessagesAfter(since)
+}
+
+func (ms MessageService) GetMessages(conversationId uuid.UUID) ([]storage.Message, error) {
+	return pgStorage.GetMessagesByConversationId(conversationId)
+}
+
+func (ms MessageService) CheckConversationMember(userId, conversationId uuid.UUID) error {
+	conversationMembers, err := pgStorage.GetMembersByConversationIds([]uuid.UUID{conversationId})
+	if err != nil {
+		log.Printf("Failed to get members: %s", err.Error())
+		return fmt.Errorf("Failed to get members: %w", err)
+	}
+
+	for _, conversations := range conversationMembers {
+		if conversations.UserId == userId {
+			return nil
+		}
+	}
+
+	return common.ErrNotFound
+}
+
 func (ms MessageService) GetOrCreateConversation(usernames []string) (*uuid.UUID, error) {
 	slices.Sort(usernames)
 
@@ -28,7 +55,7 @@ func (ms MessageService) GetOrCreateConversation(usernames []string) (*uuid.UUID
 		return nil, fmt.Errorf("Failed to get user ids: %w", err)
 	}
 
-	values := make([]uuid.UUID, len(idMap))
+	values := make([]uuid.UUID, 0, len(idMap))
 	for _, id := range idMap {
 		values = append(values, id)
 	}
@@ -65,7 +92,7 @@ func (ms MessageService) GetConversations(userId uuid.UUID) ([]common.Conversati
 		conversationMap[conversationMember.ConversationId] = append(conversationMap[conversationMember.ConversationId], conversationMember.UserId)
 	}
 
-	result := make([]common.Conversation, len(conversationMap))
+	result := make([]common.Conversation, 0, len(conversationMap))
 	for conversationId, members := range conversationMap {
 		result = append(result, common.Conversation{
 			Id: conversationId,
@@ -90,7 +117,7 @@ func (ms MessageService) SendMessageToConversation(messageBody string, sender uu
 
 	err = pgStorage.InsertMessage(message)
 	if err != nil {
-		return nil, err
+		return nil, errors.Join(common.ErrPgInsertFailed, err)
 	}
 
 	return &message.Id, nil
