@@ -14,6 +14,7 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 	"github.com/google/uuid"
+	"github.com/joho/godotenv"
 )
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -86,8 +87,9 @@ var (
 )
 
 func init() {
+    godotenv.Load()
 	host := os.Getenv("SERVER_HOST")
-	port := os.Getenv("ANI_PORT")
+	port := os.Getenv("SERVER_PORT")
 
 	if host != "" && port != "" {
 		baseURL = "http://" + host + ":" + port
