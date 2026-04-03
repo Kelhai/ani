@@ -354,6 +354,30 @@ func cmdPollTick() tea.Cmd {
 	})
 }
 
+// Add this struct to replace the raw string chat lines
+type chatLine struct {
+	text      string
+	arrivedAt time.Time
+	fromPoll  bool // true = came from polling, false = optimistic own send
+}
+
+// Fade tick message for animation
+type fadeTickMsg time.Time
+
+// Colors for the tilde fade — bright to dark over 10 steps (500ms each)
+var fadeColors = []string{
+	"212", // 0.0s — bright pink
+	"211", // 0.5s
+	"175", // 1.0s
+	"139", // 1.5s
+	"103", // 2.0s
+	"67",  // 2.5s
+	"246", // 3.0s
+	"243", // 3.5s
+	"240", // 4.0s
+	"237", // 4.5s — nearly invisible
+}
+
 // ═══════════════════════════════════════════════════════════════════════════
 // Model
 // ═══════════════════════════════════════════════════════════════════════════
@@ -362,7 +386,7 @@ type model struct {
 	screen screen
 
 	// auth flow
-	authChoice string // "l" or "r"
+	authChoice string
 	username   string
 	password   string
 
@@ -377,9 +401,10 @@ type model struct {
 
 	// active chat
 	convId        uuid.UUID
-	chatLines     []string
+	chatLines     []chatLine    // ← changed from []string
 	lastMessageId *uuid.UUID
 	usernameCache map[uuid.UUID]string
+	fadingActive  bool          // ← new: is the fade tick loop running?
 
 	// widgets
 	textInput textinput.Model
@@ -408,6 +433,50 @@ func initialModel() model {
 		usernameCache: make(map[uuid.UUID]string),
 	}
 }
+
+func cmdFadeTick() tea.Cmd {
+	return tea.Tick(200*time.Millisecond, func(t time.Time) tea.Msg {
+		return fadeTickMsg(t)
+	})
+}
+
+// renderChatContent builds viewport content with fading tilde indicators
+func (m model) renderChatContent() string {
+	var lines []string
+	now := time.Now()
+
+	for _, cl := range m.chatLines {
+		if cl.fromPoll && !cl.arrivedAt.IsZero() {
+			elapsed := now.Sub(cl.arrivedAt)
+			if elapsed < 5*time.Second {
+				step := int(elapsed.Milliseconds() / 500)
+				if step >= len(fadeColors) {
+					step = len(fadeColors) - 1
+				}
+				tilde := lipgloss.NewStyle().
+					Foreground(lipgloss.Color(fadeColors[step])).
+					Render("~ ")
+				lines = append(lines, tilde+cl.text)
+				continue
+			}
+		}
+		// no tilde — faded out or own message
+		lines = append(lines, cl.text)
+	}
+	return strings.Join(lines, "\n")
+}
+
+// hasFading checks if any chat lines still have an active fade
+func (m model) hasFading() bool {
+	now := time.Now()
+	for _, cl := range m.chatLines {
+		if cl.fromPoll && !cl.arrivedAt.IsZero() && now.Sub(cl.arrivedAt) < 5*time.Second {
+			return true
+		}
+	}
+	return false
+}
+
 
 func (m model) Init() tea.Cmd {
 	return textinput.Blink
@@ -506,6 +575,8 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			if msg.lastMessageId != nil {
 				m.lastMessageId = msg.lastMessageId
 			}
+
+			now := time.Now()
 			for _, rm := range msg.messages {
 				var line string
 				if rm.senderId == m.myId {
@@ -513,16 +584,47 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				} else {
 					line = otherMsgStyle.Render(rm.sender+": ") + rm.text
 				}
-				m.chatLines = append(m.chatLines, line)
+				m.chatLines = append(m.chatLines, chatLine{
+					text:      line,
+					arrivedAt: now,
+					fromPoll:  true,
+				})
 			}
+
 			if len(msg.messages) > 0 && m.vpReady {
-				m.viewport.SetContent(strings.Join(m.chatLines, "\n"))
+				m.viewport.SetContent(m.renderChatContent())
 				m.viewport.GotoBottom()
 			}
+
+			// start fade tick loop if we got new messages and it's not already running
+			if len(msg.messages) > 0 && !m.fadingActive {
+				m.fadingActive = true
+				if m.screen == screenChat {
+					return m, tea.Batch(cmdPollTick(), cmdFadeTick())
+				}
+			}
 		}
-		// keep polling only while still on the chat screen
 		if m.screen == screenChat {
 			return m, cmdPollTick()
+		}
+		return m, nil
+
+	// ── fade animation tick ──────────────────────────────────────────
+	case fadeTickMsg:
+		if m.screen != screenChat {
+			m.fadingActive = false
+			return m, nil
+		}
+		if m.hasFading() {
+			if m.vpReady {
+				m.viewport.SetContent(m.renderChatContent())
+			}
+			return m, cmdFadeTick()
+		}
+		// all fades done — one final render without tildes
+		m.fadingActive = false
+		if m.vpReady {
+			m.viewport.SetContent(m.renderChatContent())
 		}
 		return m, nil
 
@@ -562,9 +664,10 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 func (m *model) enterChat(convId uuid.UUID) {
 	m.convId = convId
-	m.chatLines = nil
+	m.chatLines = nil          // already correct — now []chatLine
 	m.lastMessageId = nil
 	m.errStr = ""
+	m.fadingActive = false
 	m.screen = screenChat
 	m.textInput.SetValue("")
 	m.textInput.Placeholder = "Type a message…"
@@ -728,8 +831,8 @@ func (m model) updateChat(msg tea.Msg) (tea.Model, tea.Cmd) {
 	if key, ok := msg.(tea.KeyMsg); ok {
 		switch key.String() {
 		case "esc":
-			// back to conversations and reload them
 			m.screen = screenConversations
+			m.fadingActive = false
 			m.loading = true
 			m.status = "Loading conversations…"
 			return m, cmdLoadConversations(m.token)
@@ -739,11 +842,15 @@ func (m model) updateChat(msg tea.Msg) (tea.Model, tea.Cmd) {
 				return m, nil
 			}
 			m.textInput.SetValue("")
-			// optimistically show own message
+
+			// optimistic — own messages never get a tilde
 			line := myMsgStyle.Render(m.myName+": ") + text
-			m.chatLines = append(m.chatLines, line)
+			m.chatLines = append(m.chatLines, chatLine{
+				text:     line,
+				fromPoll: false,
+			})
 			if m.vpReady {
-				m.viewport.SetContent(strings.Join(m.chatLines, "\n"))
+				m.viewport.SetContent(m.renderChatContent())
 				m.viewport.GotoBottom()
 			}
 			return m, cmdSendMessage(m.token, m.convId, text)
