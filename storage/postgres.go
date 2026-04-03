@@ -28,6 +28,7 @@ func SetupPgStorage() PgStorage {
 	db := bun.NewDB(sqldb, pgdialect.New())
 
 	createAuthSchema(db)
+	createMessageSchema(db)
 
 	return PgStorage{db: db}
 }

@@ -17,3 +17,9 @@ type Session struct {
 	UserId    uuid.UUID
 	ExpiresAt time.Time
 }
+
+type Conversation struct {
+	Id uuid.UUID `json:"id"`
+	Members []uuid.UUID `json:"members"`
+}
+
