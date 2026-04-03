@@ -86,7 +86,14 @@ var (
 )
 
 func init() {
-	if port := os.Getenv("ANI_PORT"); port != "" {
+	host := os.Getenv("SERVER_HOST")
+	port := os.Getenv("ANI_PORT")
+
+	if host != "" && port != "" {
+		baseURL = "http://" + host + ":" + port
+	} else if host != "" {
+		baseURL = "http://" + host + ":52971"
+	} else if port != "" {
 		baseURL = "http://localhost:" + port
 	}
 }
