@@ -89,3 +89,14 @@ func (as AuthService) CreateUser(username, password string) (*common.User, error
 
 	return &user, nil
 }
+
+func (as AuthService) GetUsernamesByIds(userIds []uuid.UUID) (map[uuid.UUID]string, error) {
+	users, err := pgStorage.GetUsersByIds(userIds)
+	if err != nil {
+		log.Printf("Failed to get users by ids: %s", err.Error())
+		return nil, fmt.Errorf("Failed to get users by ids: %w", err)
+	}
+
+	return users, nil
+}
+

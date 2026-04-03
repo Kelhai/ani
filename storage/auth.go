@@ -51,6 +51,64 @@ func (pgs PgStorage) GetUserByUsername(username string) (*common.User, error) {
 	}, nil
 }
 
+func (pgs PgStorage) GetUserIdsByUsernames(usernames []string) (map[string]uuid.UUID, error) {
+	if len(usernames) == 0 {
+		return map[string]uuid.UUID{}, nil
+	}
+
+	var users []User
+	err := pgs.db.NewSelect().
+		Model(&users).
+		Where("username IN (?)", bun.List(usernames)).
+		Scan(context.Background())
+	if err != nil {
+		return nil, fmt.Errorf("failed to get users: %w", err)
+	}
+
+	result := make(map[string]uuid.UUID, len(users))
+	for _, u := range users {
+		result[u.Username] = u.Id
+	}
+
+	return result, nil
+}
+
+func (pgs PgStorage) GetUserIdByUsername(username string) (*uuid.UUID, error) {
+	user := User{}
+	err := pgs.db.NewSelect().
+		Model(&user).
+		Where("username = ?", username).
+		Scan(context.Background())
+	if err != nil {
+		log.Printf("Failed to get user: %s", err.Error())
+		return nil, fmt.Errorf("Failed to get user: %w", err)
+	}
+
+	return &user.Id, nil
+}
+
+func (pgs PgStorage) GetUsersByIds(userIds []uuid.UUID) (map[uuid.UUID]string, error) {
+	if len(userIds) == 0 {
+		return map[uuid.UUID]string{}, nil
+	}
+
+	var users []User
+	err := pgs.db.NewSelect().
+		Model(&users).
+		Where("id IN (?)", bun.List(userIds)).
+		Scan(context.Background())
+	if err != nil {
+		return nil, fmt.Errorf("failed to get users: %w", err)
+	}
+
+	result := make(map[uuid.UUID]string, len(users))
+	for _, u := range users {
+		result[u.Id] = u.Username
+	}
+
+	return result, nil
+}
+
 func (pgs PgStorage) AddUser(user common.User) error {
 	pgUser := User{
 		Id:           user.Id,
