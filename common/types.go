@@ -19,7 +19,6 @@ type Session struct {
 }
 
 type Conversation struct {
-	Id uuid.UUID `json:"id"`
+	Id      uuid.UUID   `json:"id"`
 	Members []uuid.UUID `json:"members"`
 }
-

@@ -85,10 +85,9 @@ func getUser(c *echo.Context) error {
 	if err != nil {
 		return echo.NewHTTPError(http.StatusNotFound, "user not found")
 	}
-	return c.JSON(http.StatusOK, struct{
+	return c.JSON(http.StatusOK, struct {
 		Username string `json:"username"`
 	}{
 		Username: user.Username,
 	})
 }
-

@@ -87,7 +87,7 @@ var (
 )
 
 func init() {
-    godotenv.Load()
+	godotenv.Load()
 	host := os.Getenv("SERVER_HOST")
 	port := os.Getenv("SERVER_PORT")
 
@@ -401,10 +401,10 @@ type model struct {
 
 	// active chat
 	convId        uuid.UUID
-	chatLines     []chatLine    // ← changed from []string
+	chatLines     []chatLine // ← changed from []string
 	lastMessageId *uuid.UUID
 	usernameCache map[uuid.UUID]string
-	fadingActive  bool          // ← new: is the fade tick loop running?
+	fadingActive  bool // ← new: is the fade tick loop running?
 
 	// widgets
 	textInput textinput.Model
@@ -476,7 +476,6 @@ func (m model) hasFading() bool {
 	}
 	return false
 }
-
 
 func (m model) Init() tea.Cmd {
 	return textinput.Blink
@@ -664,7 +663,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 func (m *model) enterChat(convId uuid.UUID) {
 	m.convId = convId
-	m.chatLines = nil          // already correct — now []chatLine
+	m.chatLines = nil // already correct — now []chatLine
 	m.lastMessageId = nil
 	m.errStr = ""
 	m.fadingActive = false
@@ -889,7 +888,7 @@ func (m model) View() string {
 		return m.viewConversations()
 	case screenNewChat:
 		return m.viewNewChat()
-    case screenChat:
+	case screenChat:
 		return m.viewChat()
 	}
 	return ""

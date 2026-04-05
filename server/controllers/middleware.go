@@ -31,4 +31,3 @@ var SessionMiddleware = middleware.KeyAuth(
 		return true, nil
 	},
 )
-

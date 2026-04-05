@@ -95,7 +95,7 @@ func (ms MessageService) GetConversations(userId uuid.UUID) ([]common.Conversati
 	result := make([]common.Conversation, 0, len(conversationMap))
 	for conversationId, members := range conversationMap {
 		result = append(result, common.Conversation{
-			Id: conversationId,
+			Id:      conversationId,
 			Members: members,
 		})
 	}
@@ -109,10 +109,10 @@ func (ms MessageService) SendMessageToConversation(messageBody string, sender uu
 		return nil, common.ErrUuidFailed
 	}
 	message := storage.Message{
-		Id: id,
-		Message: messageBody,
+		Id:             id,
+		Message:        messageBody,
 		ConversationId: conversation,
-		SenderId: sender,
+		SenderId:       sender,
 	}
 
 	err = pgStorage.InsertMessage(message)
@@ -122,4 +122,3 @@ func (ms MessageService) SendMessageToConversation(messageBody string, sender uu
 
 	return &message.Id, nil
 }
-

@@ -13,8 +13,8 @@ import (
 )
 
 type conversationResponse struct {
-	Id uuid.UUID `json:"id"`
-	Members []string `json:"members"`
+	Id      uuid.UUID `json:"id"`
+	Members []string  `json:"members"`
 }
 
 func setupMessageRoutes(e *echo.Echo) {
@@ -97,7 +97,7 @@ func createConversation(c *echo.Context) error {
 		return echo.NewHTTPError(http.StatusInternalServerError, "failed to get or create conversation")
 	}
 
-	return c.JSON(http.StatusCreated, struct{
+	return c.JSON(http.StatusCreated, struct {
 		ConversationId uuid.UUID `json:"conversationId"`
 	}{
 		ConversationId: *conversationId,
@@ -124,7 +124,7 @@ func sendMessageToConversation(c *echo.Context) error {
 		return echo.NewHTTPError(http.StatusInternalServerError, "failed to send message")
 	}
 
-	return c.JSON(http.StatusCreated, struct{
+	return c.JSON(http.StatusCreated, struct {
 		MessageId uuid.UUID `json:"message_id"`
 	}{
 		MessageId: *messageId,
@@ -179,4 +179,3 @@ func getConversations(c *echo.Context) error {
 
 	return c.JSON(http.StatusOK, response)
 }
-

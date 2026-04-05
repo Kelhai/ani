@@ -133,8 +133,8 @@ func (pgs PgStorage) GetSessionByToken(token uuid.UUID) (*common.Session, error)
 		return nil, fmt.Errorf("failed to get session: %w", err)
 	}
 	return &common.Session{
-		Id:    session.Id,
-		UserId: session.UserId,
+		Id:        session.Id,
+		UserId:    session.UserId,
 		ExpiresAt: session.ExpiresAt,
 	}, nil
 }

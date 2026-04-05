@@ -17,18 +17,18 @@ import (
 )
 
 func createMessageSchema(db *bun.DB) {
-    ctx := context.Background()
-    db.NewCreateTable().Model((*Conversation)(nil)).IfNotExists().Exec(ctx)
-    db.NewCreateTable().Model((*ConversationMember)(nil)).IfNotExists().Exec(ctx)
-    db.NewCreateTable().Model((*Message)(nil)).IfNotExists().Exec(ctx)
-    db.ExecContext(ctx, `ALTER TABLE conversation_members ADD CONSTRAINT IF NOT EXISTS conversation_members_unique UNIQUE (conversation_id, user_id)`)
+	ctx := context.Background()
+	db.NewCreateTable().Model((*Conversation)(nil)).IfNotExists().Exec(ctx)
+	db.NewCreateTable().Model((*ConversationMember)(nil)).IfNotExists().Exec(ctx)
+	db.NewCreateTable().Model((*Message)(nil)).IfNotExists().Exec(ctx)
+	db.ExecContext(ctx, `ALTER TABLE conversation_members ADD CONSTRAINT IF NOT EXISTS conversation_members_unique UNIQUE (conversation_id, user_id)`)
 }
 
 type Conversation struct {
 	bun.BaseModel `bun:"table:conversations"`
 
-	Id uuid.UUID `bun:"id,pk,type:uuid"`
-	Key string `bun:"key,unique,notnull"`
+	Id  uuid.UUID `bun:"id,pk,type:uuid"`
+	Key string    `bun:"key,unique,notnull"`
 }
 
 type ConversationMember struct {
@@ -41,10 +41,10 @@ type ConversationMember struct {
 type Message struct {
 	bun.BaseModel `bun:"table:messages"`
 
-	Id uuid.UUID `bun:"id,pk,type:uuid" json:"id"`
+	Id             uuid.UUID `bun:"id,pk,type:uuid" json:"id"`
 	ConversationId uuid.UUID `bun:"conversation_id,notnull,type:uuid" json:"conversationId"`
-	SenderId uuid.UUID `bun:"sender_id,notnull,type:uuid" json:"senderId"`
-	Message string `bun:"message,notnull" json:"message"`
+	SenderId       uuid.UUID `bun:"sender_id,notnull,type:uuid" json:"senderId"`
+	Message        string    `bun:"message,notnull" json:"message"`
 }
 
 func conversationKey(members []uuid.UUID) string {
@@ -63,7 +63,7 @@ func (pgs PgStorage) GetConversationByMembers(members []uuid.UUID) (*Conversatio
 	conversation := Conversation{}
 
 	err := pgs.db.NewSelect().
-	    Model(&conversation).
+		Model(&conversation).
 		Where("key = ?", key).
 		Scan(context.Background())
 	if err != nil {
@@ -85,7 +85,7 @@ func (pgs PgStorage) InsertConversation(members []uuid.UUID) (*Conversation, err
 		return nil, common.ErrUuidFailed
 	}
 	conversation := Conversation{
-		Id: id,
+		Id:  id,
 		Key: key,
 	}
 
@@ -224,4 +224,3 @@ func (pgs PgStorage) GetMembersByConversationIds(ids []uuid.UUID) ([]Conversatio
 
 	return members, nil
 }
-
