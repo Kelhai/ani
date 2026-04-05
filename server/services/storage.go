@@ -1,7 +1,7 @@
 package services
 
 import (
-	"github.com/Kelhai/ani/storage"
+	"github.com/Kelhai/ani/server/storage"
 )
 
 var (

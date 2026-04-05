@@ -8,7 +8,7 @@ import (
 	"slices"
 
 	"github.com/Kelhai/ani/common"
-	"github.com/Kelhai/ani/storage"
+	"github.com/Kelhai/ani/server/storage"
 	"github.com/google/uuid"
 )
 

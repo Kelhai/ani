@@ -7,7 +7,7 @@ import (
 	"net/http"
 
 	"github.com/Kelhai/ani/common"
-	"github.com/Kelhai/ani/storage"
+	"github.com/Kelhai/ani/server/storage"
 	"github.com/google/uuid"
 	"github.com/labstack/echo/v5"
 )

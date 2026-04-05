@@ -9,9 +9,9 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/Kelhai/ani/config"
-	"github.com/Kelhai/ani/controllers"
-	"github.com/Kelhai/ani/services"
+	"github.com/Kelhai/ani/server/config"
+	"github.com/Kelhai/ani/server/controllers"
+	"github.com/Kelhai/ani/server/services"
 	"github.com/labstack/echo/v5"
 	"github.com/labstack/echo/v5/middleware"
 )

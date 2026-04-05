@@ -1,6 +1,6 @@
 package controllers
 
-import "github.com/Kelhai/ani/services"
+import "github.com/Kelhai/ani/server/services"
 
 var (
 	authService services.AuthService
