@@ -22,3 +22,4 @@ type Conversation struct {
 	Id      uuid.UUID   `json:"id"`
 	Members []uuid.UUID `json:"members"`
 }
+

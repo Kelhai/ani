@@ -10,13 +10,13 @@ import (
 	"strings"
 	"time"
 
+	"github.com/Kelhai/ani/client"
 	"github.com/Kelhai/ani/client/config"
 	"github.com/charmbracelet/bubbles/textinput"
 	"github.com/charmbracelet/bubbles/viewport"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 	"github.com/google/uuid"
-	"github.com/joho/godotenv"
 )
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -460,10 +460,10 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	// ── async results (handled regardless of current screen) ─────────
 
-	case registerResultMsg:
+	case client.RegisterResultMsg:
 		m.loading = false
-		if msg.err != nil {
-			m.errStr = msg.err.Error()
+		if msg.Err != nil {
+			m.errStr = msg.Err.Error()
 			m.screen = screenPassword
 			return m, nil
 		}
@@ -816,10 +816,6 @@ func (m model) updateChat(msg tea.Msg) (tea.Model, tea.Cmd) {
 	return m, tea.Batch(cmds...)
 }
 
-// ═══════════════════════════════════════════════════════════════════════════
-// View
-// ═══════════════════════════════════════════════════════════════════════════
-
 func (m model) View() string {
 	if m.loading {
 		return m.frame(statusStyle.Render("⏳ "+m.status) + "\n")
@@ -841,8 +837,6 @@ func (m model) View() string {
 	return ""
 }
 
-// ── frame helper: centres content with optional error ───────────────────────
-
 func (m model) frame(body string) string {
 	var b strings.Builder
 	b.WriteString("\n")
@@ -854,8 +848,6 @@ func (m model) frame(body string) string {
 	return b.String()
 }
 
-// ── auth choice ─────────────────────────────────────────────────────────────
-
 func (m model) viewAuthChoice() string {
 	body := fmt.Sprintf(
 		"%s\n\n  %s  Login\n  %s  Register\n\n%s\n",
@@ -866,8 +858,6 @@ func (m model) viewAuthChoice() string {
 	)
 	return m.frame(body)
 }
-
-// ── username ────────────────────────────────────────────────────────────────
 
 func (m model) viewUsername() string {
 	action := "Login"
@@ -883,8 +873,6 @@ func (m model) viewUsername() string {
 	return m.frame(body)
 }
 
-// ── password ────────────────────────────────────────────────────────────────
-
 func (m model) viewPassword() string {
 	action := "Login"
 	if m.authChoice == "r" {
@@ -899,8 +887,6 @@ func (m model) viewPassword() string {
 	)
 	return m.frame(body)
 }
-
-// ── conversation list ───────────────────────────────────────────────────────
 
 func (m model) viewConversations() string {
 	var b strings.Builder
@@ -931,8 +917,6 @@ func (m model) viewConversations() string {
 	return m.frame(b.String())
 }
 
-// ── new chat ────────────────────────────────────────────────────────────────
-
 func (m model) viewNewChat() string {
 	body := fmt.Sprintf(
 		"New conversation — who do you want to chat with?\n\n  %s\n\n%s\n",
@@ -941,8 +925,6 @@ func (m model) viewNewChat() string {
 	)
 	return m.frame(body)
 }
-
-// ── chat ────────────────────────────────────────────────────────────────────
 
 func (m model) viewChat() string {
 	var b strings.Builder
@@ -967,10 +949,6 @@ func (m model) viewChat() string {
 
 	return b.String()
 }
-
-// ═══════════════════════════════════════════════════════════════════════════
-// Main
-// ═══════════════════════════════════════════════════════════════════════════
 
 func main() {
 	err := config.SetupConfig()
