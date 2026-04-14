@@ -19,18 +19,13 @@ func setupAuthRoutes(e *echo.Echo) {
 	g.GET("/user/:userId", getUser, SessionMiddleware)
 }
 
-type loginUser struct {
-	Username string `json:"username"`
-	Password string `json:"password"`
-}
-
 type loginResponse struct {
 	Token uuid.UUID `json:"token"`
 	common.User
 }
 
 func login(c *echo.Context) error {
-	var bodyUser loginUser
+	var bodyUser common.AuthRequest
 
 	err := c.Bind(&bodyUser)
 	if err != nil {
@@ -60,7 +55,7 @@ func login(c *echo.Context) error {
 }
 
 func register(c *echo.Context) error {
-	var bodyUser loginUser
+	var bodyUser common.AuthRequest
 
 	err := c.Bind(&bodyUser)
 	if err != nil {

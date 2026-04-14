@@ -12,6 +12,11 @@ type User struct {
 	PasswordHash string    `json:"-"`
 }
 
+type AuthRequest struct {
+	Username string `json:"username"`
+	Password string `json:"password"`
+}
+
 type Session struct {
 	Id        uuid.UUID
 	UserId    uuid.UUID
@@ -22,4 +27,3 @@ type Conversation struct {
 	Id      uuid.UUID   `json:"id"`
 	Members []uuid.UUID `json:"members"`
 }
-
