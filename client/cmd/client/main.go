@@ -4,11 +4,13 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
+	"log"
 	"net/http"
 	"os"
 	"strings"
 	"time"
 
+	"github.com/Kelhai/ani/client/config"
 	"github.com/charmbracelet/bubbles/textinput"
 	"github.com/charmbracelet/bubbles/viewport"
 	tea "github.com/charmbracelet/bubbletea"
@@ -86,20 +88,6 @@ var (
 	httpClient = &http.Client{Timeout: 10 * time.Second}
 )
 
-func init() {
-	godotenv.Load()
-	host := os.Getenv("SERVER_HOST")
-	port := os.Getenv("SERVER_PORT")
-
-	if host != "" && port != "" {
-		baseURL = "http://" + host + ":" + port
-	} else if host != "" {
-		baseURL = "http://" + host + ":52971"
-	} else if port != "" {
-		baseURL = "http://localhost:" + port
-	}
-}
-
 func apiAuth(path, username, password string) (*http.Response, error) {
 	body, _ := json.Marshal(map[string]string{
 		"username": username,
@@ -120,34 +108,6 @@ func apiAuthed(method, path string, tok uuid.UUID, payload any) (*http.Response,
 	req.Header.Set("Authorization", "Bearer "+tok.String())
 	return httpClient.Do(req)
 }
-
-// ═══════════════════════════════════════════════════════════════════════════
-// Data types
-// ═══════════════════════════════════════════════════════════════════════════
-
-type conversation struct {
-	Id      uuid.UUID `json:"id"`
-	Members []string  `json:"members"`
-}
-
-type rawMessage struct {
-	Id       uuid.UUID `json:"id"`
-	SenderId uuid.UUID `json:"senderId"`
-	Message  string    `json:"message"`
-}
-
-type resolvedMessage struct {
-	id       uuid.UUID
-	sender   string
-	senderId uuid.UUID
-	text     string
-}
-
-// ═══════════════════════════════════════════════════════════════════════════
-// Tea messages (results from async commands)
-// ═══════════════════════════════════════════════════════════════════════════
-
-type registerResultMsg struct{ err error }
 
 type loginResultMsg struct {
 	token    uuid.UUID
@@ -181,19 +141,6 @@ type pollTickMsg struct{}
 // Async commands
 // ═══════════════════════════════════════════════════════════════════════════
 
-func cmdRegister(username, password string) tea.Cmd {
-	return func() tea.Msg {
-		resp, err := apiAuth("/auth/register", username, password)
-		if err != nil {
-			return registerResultMsg{err: err}
-		}
-		resp.Body.Close()
-		if resp.StatusCode != http.StatusCreated {
-			return registerResultMsg{err: fmt.Errorf("registration failed (status %d)", resp.StatusCode)}
-		}
-		return registerResultMsg{}
-	}
-}
 
 func cmdLogin(username, password string) tea.Cmd {
 	return func() tea.Msg {
@@ -1022,28 +969,16 @@ func (m model) viewChat() string {
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
-// Helpers
-// ═══════════════════════════════════════════════════════════════════════════
-
-func min(a, b int) int {
-	if a < b {
-		return a
-	}
-	return b
-}
-
-func max(a, b int) int {
-	if a > b {
-		return a
-	}
-	return b
-}
-
-// ═══════════════════════════════════════════════════════════════════════════
 // Main
 // ═══════════════════════════════════════════════════════════════════════════
 
 func main() {
+	err := config.SetupConfig()
+	if err != nil {
+		log.Fatalf("Failed to load config: %s", err.Error())
+		os.Exit(1)
+	}
+
 	p := tea.NewProgram(
 		initialModel(),
 		tea.WithAltScreen(),
@@ -1054,3 +989,4 @@ func main() {
 		os.Exit(1)
 	}
 }
+
