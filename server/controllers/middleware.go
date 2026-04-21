@@ -26,8 +26,6 @@ var SessionMiddleware = middleware.KeyAuth(
 			return false, nil
 		}
 
-		log.Print(session)
-		log.Println(" Validated")
 		c.Set("userId", session.UserId)
 		return true, nil
 	},

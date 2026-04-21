@@ -91,7 +91,7 @@ func (_ MessageService) SendMessage(conversationId uuid.UUID, text string) (*uui
 	body := map[string]string{
 		"message": text,
 	}
-	statusCode, messageJson, err := apiService.POST("/m/" + conversationId.String(), body)
+	statusCode, messageJson, err := apiService.POST("/messages/m/" + conversationId.String(), body)
 	if err != nil {
 		return nil, err
 	}

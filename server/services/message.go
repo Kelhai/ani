@@ -22,8 +22,32 @@ func (ms MessageService) GetMessage(msgId uuid.UUID) (*storage.Message, error) {
 	return pgStorage.GetMessageById(msgId)
 }
 
-func (ms MessageService) GetMessagesSince(since uuid.UUID) ([]storage.Message, error) {
-	return pgStorage.GetMessagesAfter(since)
+func (ms MessageService) GetMessagesSince(since uuid.UUID) ([]common.ShortMessage, error) {
+	messages, err := pgStorage.GetMessagesAfter(since)
+	if err != nil {
+		return nil, err
+	}
+
+	userIds := make([]uuid.UUID, len(messages))
+	for i, m := range messages {
+		userIds[i] = m.SenderId
+	}
+
+	userMap, err := pgStorage.GetUsersByIds(userIds)
+	if err != nil {
+		return nil, err
+	}
+
+	out := make([]common.ShortMessage, len(messages))
+	for i, m := range messages {
+		out[i] = common.ShortMessage{
+			Id:      m.Id,
+			Sender:  userMap[m.SenderId],
+			Content: m.Message,
+		}
+	}
+
+	return out, nil
 }
 
 func (ms MessageService) GetMessages(conversationId uuid.UUID) ([]common.ShortMessage, error) {

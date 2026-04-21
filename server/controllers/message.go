@@ -28,8 +28,6 @@ func getMessagesFromConversation(c *echo.Context) error {
 	if err != nil {
 		return echo.NewHTTPError(http.StatusBadRequest, "invalid conversation id")
 	}
-	log.Printf("userId from context: %v", c.Get("userId"))
-	log.Printf("convId from path: %v", c.Param("conversationId"))
 
 	err = messageService.CheckConversationMember(userId, conversationId)
 	if err != nil {

@@ -87,7 +87,6 @@ type model struct {
 	// session
 	token  uuid.UUID
 	myId   uuid.UUID
-	myName string
 
 	// conversations
 	conversations []common.ConversationWithUsernames
@@ -314,6 +313,8 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case client.MessageSentMsg:
 		if msg.Err != nil {
 			m.errStr = msg.Err.Error()
+		} else {
+			m.lastMessageId = &msg.MessageId
 		}
 		return m, nil
 
@@ -489,10 +490,10 @@ func (m model) updateNewChat(msg tea.Msg) (tea.Model, tea.Cmd) {
 			if val == "" {
 				return m, nil
 			}
-			usernames := []string{m.myName}
+			usernames := []string{m.username}
 			for u := range strings.SplitSeq(val, ",") {
 				u = strings.TrimSpace(u)
-				if u != "" && u != m.myName {
+				if u != "" && u != m.username {
 					usernames = append(usernames, u)
 				}
 			}
@@ -527,7 +528,7 @@ func (m model) updateChat(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.textInput.SetValue("")
 
 			// optimistic — own messages never get a tilde
-			line := myMsgStyle.Render(m.myName+": ") + text
+			line := myMsgStyle.Render(m.username+": ") + text
 			m.chatLines = append(m.chatLines, client.ChatLine{
 				Text:     line,
 				FromPoll: false,
@@ -628,7 +629,7 @@ func (m model) viewPassword() string {
 func (m model) viewConversations() string {
 	var b strings.Builder
 
-	fmt.Fprintf(&b, "Logged in as %s\n\n", selectedStyle.Render(m.myName))
+	fmt.Fprintf(&b, "Logged in as %s\n\n", selectedStyle.Render(m.username))
 
 	if len(m.conversations) == 0 {
 		b.WriteString(statusStyle.Render("  No conversations yet.") + "\n")
