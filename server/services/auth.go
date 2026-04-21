@@ -107,8 +107,7 @@ func (as AuthService) GetUserById(userId uuid.UUID) (*common.User, error) {
 	}
 
 	return &common.User{
-		Id: user.Id,
+		Id:       user.Id,
 		Username: user.Username,
 	}, nil
 }
-

@@ -22,7 +22,6 @@ var SessionMiddleware = middleware.KeyAuth(
 			log.Println(err.Error())
 			return false, nil
 		}
-		log.Println(session)
 		if time.Now().After(session.ExpiresAt) {
 			return false, nil
 		}
@@ -31,4 +30,3 @@ var SessionMiddleware = middleware.KeyAuth(
 		return true, nil
 	},
 )
-

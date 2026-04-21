@@ -8,7 +8,7 @@ import (
 	"slices"
 
 	"github.com/Kelhai/ani/common"
-	"github.com/Kelhai/ani/storage"
+	"github.com/Kelhai/ani/server/storage"
 	"github.com/google/uuid"
 )
 
@@ -22,12 +22,64 @@ func (ms MessageService) GetMessage(msgId uuid.UUID) (*storage.Message, error) {
 	return pgStorage.GetMessageById(msgId)
 }
 
-func (ms MessageService) GetMessagesSince(since uuid.UUID) ([]storage.Message, error) {
-	return pgStorage.GetMessagesAfter(since)
+func (ms MessageService) GetMessagesSince(since uuid.UUID) ([]common.ShortMessage, error) {
+	messages, err := pgStorage.GetMessagesAfter(since)
+	if err != nil {
+		return nil, err
+	}
+
+	userIds := make([]uuid.UUID, len(messages))
+	for i, m := range messages {
+		userIds[i] = m.SenderId
+	}
+
+	userMap, err := pgStorage.GetUsersByIds(userIds)
+	if err != nil {
+		return nil, err
+	}
+
+	out := make([]common.ShortMessage, len(messages))
+	for i, m := range messages {
+		out[i] = common.ShortMessage{
+			Id:      m.Id,
+			Sender:  userMap[m.SenderId],
+			Content: m.Message,
+		}
+	}
+
+	return out, nil
 }
 
-func (ms MessageService) GetMessages(conversationId uuid.UUID) ([]storage.Message, error) {
-	return pgStorage.GetMessagesByConversationId(conversationId)
+func (ms MessageService) GetMessages(conversationId uuid.UUID) ([]common.ShortMessage, error) {
+	messages, err := pgStorage.GetMessagesByConversationId(conversationId)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return []common.ShortMessage{}, nil
+		}
+		return nil, err
+	}
+
+	outputMessages := make([]common.ShortMessage, len(messages))
+	userIds := []uuid.UUID{}
+
+	for _, message := range messages {
+		userIds = append(userIds, message.SenderId)
+	}
+
+	userMap, err := pgStorage.GetUsersByIds(userIds)
+	if err != nil {
+		return nil, err
+	}
+
+	for i, message := range messages {
+		outputMessages[i] = common.ShortMessage{
+			Id:       message.Id,
+			Sender:   userMap[message.SenderId],
+			Content:  message.Message,
+		}
+	}
+
+	return outputMessages, nil
 }
 
 func (ms MessageService) CheckConversationMember(userId, conversationId uuid.UUID) error {
@@ -56,8 +108,8 @@ func (ms MessageService) GetOrCreateConversation(usernames []string) (*uuid.UUID
 	}
 
 	values := make([]uuid.UUID, 0, len(idMap))
-	for _, id := range idMap {
-		values = append(values, id)
+	for _, username := range usernames {
+		values = append(values, idMap[username])
 	}
 
 	conversation, err := pgStorage.GetOrCreateConversation(values)
@@ -95,7 +147,7 @@ func (ms MessageService) GetConversations(userId uuid.UUID) ([]common.Conversati
 	result := make([]common.Conversation, 0, len(conversationMap))
 	for conversationId, members := range conversationMap {
 		result = append(result, common.Conversation{
-			Id: conversationId,
+			Id:      conversationId,
 			Members: members,
 		})
 	}
@@ -109,10 +161,10 @@ func (ms MessageService) SendMessageToConversation(messageBody string, sender uu
 		return nil, common.ErrUuidFailed
 	}
 	message := storage.Message{
-		Id: id,
-		Message: messageBody,
+		Id:             id,
+		Message:        messageBody,
 		ConversationId: conversation,
-		SenderId: sender,
+		SenderId:       sender,
 	}
 
 	err = pgStorage.InsertMessage(message)
@@ -122,4 +174,3 @@ func (ms MessageService) SendMessageToConversation(messageBody string, sender uu
 
 	return &message.Id, nil
 }
-

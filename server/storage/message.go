@@ -17,18 +17,40 @@ import (
 )
 
 func createMessageSchema(db *bun.DB) {
-    ctx := context.Background()
-    db.NewCreateTable().Model((*Conversation)(nil)).IfNotExists().Exec(ctx)
-    db.NewCreateTable().Model((*ConversationMember)(nil)).IfNotExists().Exec(ctx)
-    db.NewCreateTable().Model((*Message)(nil)).IfNotExists().Exec(ctx)
-    db.ExecContext(ctx, `ALTER TABLE conversation_members ADD CONSTRAINT IF NOT EXISTS conversation_members_unique UNIQUE (conversation_id, user_id)`)
+	ctx := context.Background()
+
+	if _, err := db.NewCreateTable().Model((*Conversation)(nil)).IfNotExists().Exec(ctx); err != nil {
+		log.Fatalf("failed to create table: %v", err)
+	}
+	if _, err := db.NewCreateTable().Model((*ConversationMember)(nil)).IfNotExists().Exec(ctx); err != nil {
+		log.Fatalf("failed to create table: %v", err)
+	}
+	if _, err := db.NewCreateTable().Model((*Message)(nil)).IfNotExists().Exec(ctx); err != nil {
+		log.Fatalf("failed to create table: %v", err)
+	}
+	_, err := db.ExecContext(ctx, `
+		DO $$
+		BEGIN
+			IF NOT EXISTS (
+				SELECT 1 FROM pg_constraint WHERE conname = 'conversation_members_unique'
+			) THEN
+				ALTER TABLE conversation_members 
+					ADD CONSTRAINT conversation_members_unique 
+					UNIQUE (conversation_id, user_id);
+			END IF;
+		END$$
+	`)
+	if err != nil {
+		log.Fatalf("failed to add unique constraint: %v", err)
+	}
 }
 
 type Conversation struct {
 	bun.BaseModel `bun:"table:conversations"`
 
-	Id uuid.UUID `bun:"id,pk,type:uuid"`
-	Key string `bun:"key,unique,notnull"`
+	Id   uuid.UUID `bun:"id,pk,type:uuid"`
+	Key  string    `bun:"key,unique,notnull"`
+	Xmax int       `bun:"xmax,scanonly"`
 }
 
 type ConversationMember struct {
@@ -41,10 +63,10 @@ type ConversationMember struct {
 type Message struct {
 	bun.BaseModel `bun:"table:messages"`
 
-	Id uuid.UUID `bun:"id,pk,type:uuid" json:"id"`
+	Id             uuid.UUID `bun:"id,pk,type:uuid" json:"id"`
 	ConversationId uuid.UUID `bun:"conversation_id,notnull,type:uuid" json:"conversationId"`
-	SenderId uuid.UUID `bun:"sender_id,notnull,type:uuid" json:"senderId"`
-	Message string `bun:"message,notnull" json:"message"`
+	SenderId       uuid.UUID `bun:"sender_id,notnull,type:uuid" json:"senderId"`
+	Message        string    `bun:"message,notnull" json:"message"`
 }
 
 func conversationKey(members []uuid.UUID) string {
@@ -63,7 +85,7 @@ func (pgs PgStorage) GetConversationByMembers(members []uuid.UUID) (*Conversatio
 	conversation := Conversation{}
 
 	err := pgs.db.NewSelect().
-	    Model(&conversation).
+		Model(&conversation).
 		Where("key = ?", key).
 		Scan(context.Background())
 	if err != nil {
@@ -77,28 +99,11 @@ func (pgs PgStorage) GetConversationByMembers(members []uuid.UUID) (*Conversatio
 	return &conversation, nil
 }
 
-func (pgs PgStorage) InsertConversation(members []uuid.UUID) (*Conversation, error) {
-	key := conversationKey(members)
-	id, err := uuid.NewV7()
-	if err != nil {
-		log.Printf("Failed to make uuid")
-		return nil, common.ErrUuidFailed
-	}
-	conversation := Conversation{
-		Id: id,
-		Key: key,
-	}
-
-	_, err = pgs.db.NewInsert().Model(&conversation).Exec(context.Background())
-	if err != nil {
-		log.Printf("Failed to insert conversation: %s", err.Error())
-		return nil, fmt.Errorf("Failed to insert conversation: %w", err)
-	}
-
-	return &conversation, nil
-}
-
 func (pgs PgStorage) GetOrCreateConversation(members []uuid.UUID) (*Conversation, error) {
+	if len(members) == 0 {
+		return nil, errors.New("must have members to get or create conversation")
+	}
+
 	id, err := uuid.NewV7()
 	if err != nil {
 		return nil, common.ErrUuidFailed
@@ -112,13 +117,14 @@ func (pgs PgStorage) GetOrCreateConversation(members []uuid.UUID) (*Conversation
 	_, err = pgs.db.NewInsert().
 		Model(newConversation).
 		On("CONFLICT (key) DO UPDATE SET key = EXCLUDED.key").
-		Returning("id, key").
+		Returning("id, key, xmax").
 		Exec(context.Background())
 	if err != nil {
 		return nil, fmt.Errorf("failed to get or create conversation: %w", err)
 	}
 
-	isNew := newConversation.Id == id
+	// pg native
+	isNew := newConversation.Xmax == 0
 	if isNew {
 		conversationMembers := make([]ConversationMember, len(members))
 		for i, member := range members {
@@ -224,4 +230,3 @@ func (pgs PgStorage) GetMembersByConversationIds(ids []uuid.UUID) ([]Conversatio
 
 	return members, nil
 }
-

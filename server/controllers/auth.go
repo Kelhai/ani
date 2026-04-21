@@ -19,18 +19,8 @@ func setupAuthRoutes(e *echo.Echo) {
 	g.GET("/user/:userId", getUser, SessionMiddleware)
 }
 
-type loginUser struct {
-	Username string `json:"username"`
-	Password string `json:"password"`
-}
-
-type loginResponse struct {
-	Token uuid.UUID `json:"token"`
-	common.User
-}
-
 func login(c *echo.Context) error {
-	var bodyUser loginUser
+	var bodyUser common.AuthRequest
 
 	err := c.Bind(&bodyUser)
 	if err != nil {
@@ -42,7 +32,7 @@ func login(c *echo.Context) error {
 		if errors.Is(err, common.ErrInvalidLogin) {
 			return c.NoContent(http.StatusUnauthorized)
 		}
-		log.Printf("Password verification failed: %s", err.Error())
+		log.Printf("Login failed: %s", err.Error())
 		return c.NoContent(http.StatusInternalServerError)
 	}
 
@@ -51,16 +41,17 @@ func login(c *echo.Context) error {
 		return c.String(http.StatusInternalServerError, "Failed to start session")
 	}
 
-	response := loginResponse{
-		Token: session.Id,
-		User:  *user,
+	response := common.Session{
+		Id: session.Id,
+		UserId:  user.Id,
+		ExpiresAt: session.ExpiresAt,
 	}
 
 	return c.JSON(http.StatusOK, response)
 }
 
 func register(c *echo.Context) error {
-	var bodyUser loginUser
+	var bodyUser common.AuthRequest
 
 	err := c.Bind(&bodyUser)
 	if err != nil {
@@ -85,10 +76,9 @@ func getUser(c *echo.Context) error {
 	if err != nil {
 		return echo.NewHTTPError(http.StatusNotFound, "user not found")
 	}
-	return c.JSON(http.StatusOK, struct{
+	return c.JSON(http.StatusOK, struct {
 		Username string `json:"username"`
 	}{
 		Username: user.Username,
 	})
 }
-
