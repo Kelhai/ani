@@ -15,7 +15,12 @@ var (
 )
 
 func SetupConfig() error {
-	err := godotenv.Load("~/.ani/.env")
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return fmt.Errorf("Failed to get homedir: %w", err)
+	}
+
+	err = godotenv.Load(home + "/.ani/.env")
 	if err != nil {
 		return fmt.Errorf("Failed to load ~/.ani/.env: %w", err)
 	}

@@ -1,42 +1,22 @@
 package main
 
 import (
-	"bytes"
-	"encoding/json"
 	"fmt"
 	"log"
-	"net/http"
 	"os"
 	"strings"
 	"time"
 
 	"github.com/Kelhai/ani/client"
 	"github.com/Kelhai/ani/client/config"
+	"github.com/Kelhai/ani/client/controllers"
+	"github.com/Kelhai/ani/common"
 	"github.com/charmbracelet/bubbles/textinput"
 	"github.com/charmbracelet/bubbles/viewport"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 	"github.com/google/uuid"
 )
-
-// ═══════════════════════════════════════════════════════════════════════════
-// Screens
-// ═══════════════════════════════════════════════════════════════════════════
-
-type screen int
-
-const (
-	screenAuthChoice screen = iota
-	screenUsername
-	screenPassword
-	screenConversations
-	screenNewChat
-	screenChat
-)
-
-// ═══════════════════════════════════════════════════════════════════════════
-// Styles
-// ═══════════════════════════════════════════════════════════════════════════
 
 var (
 	titleStyle = lipgloss.NewStyle().
@@ -79,235 +59,6 @@ var (
 			PaddingTop(0)
 )
 
-// ═══════════════════════════════════════════════════════════════════════════
-// API helpers (same as original, but decoupled from global state)
-// ═══════════════════════════════════════════════════════════════════════════
-
-var (
-	baseURL    = "http://localhost:52971"
-	httpClient = &http.Client{Timeout: 10 * time.Second}
-)
-
-func apiAuth(path, username, password string) (*http.Response, error) {
-	body, _ := json.Marshal(map[string]string{
-		"username": username,
-		"password": password,
-	})
-	req, _ := http.NewRequest("POST", baseURL+path, bytes.NewReader(body))
-	req.Header.Set("Content-Type", "application/json")
-	return httpClient.Do(req)
-}
-
-func apiAuthed(method, path string, tok uuid.UUID, payload any) (*http.Response, error) {
-	var buf []byte
-	if payload != nil {
-		buf, _ = json.Marshal(payload)
-	}
-	req, _ := http.NewRequest(method, baseURL+path, bytes.NewReader(buf))
-	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("Authorization", "Bearer "+tok.String())
-	return httpClient.Do(req)
-}
-
-type loginResultMsg struct {
-	token    uuid.UUID
-	id       uuid.UUID
-	username string
-	err      error
-}
-
-type conversationsLoadedMsg struct {
-	convos []conversation
-	err    error
-}
-
-type conversationCreatedMsg struct {
-	id  uuid.UUID
-	err error
-}
-
-type messagesLoadedMsg struct {
-	messages      []resolvedMessage
-	newUsernames  map[uuid.UUID]string
-	lastMessageId *uuid.UUID
-	err           error
-}
-
-type messageSentMsg struct{ err error }
-
-type pollTickMsg struct{}
-
-// ═══════════════════════════════════════════════════════════════════════════
-// Async commands
-// ═══════════════════════════════════════════════════════════════════════════
-
-
-func cmdLogin(username, password string) tea.Cmd {
-	return func() tea.Msg {
-		resp, err := apiAuth("/auth/login", username, password)
-		if err != nil {
-			return loginResultMsg{err: err}
-		}
-		defer resp.Body.Close()
-		if resp.StatusCode != http.StatusOK {
-			return loginResultMsg{err: fmt.Errorf("login failed (status %d)", resp.StatusCode)}
-		}
-		var lr struct {
-			Token    uuid.UUID `json:"token"`
-			Id       uuid.UUID `json:"id"`
-			Username string    `json:"username"`
-		}
-		json.NewDecoder(resp.Body).Decode(&lr)
-		return loginResultMsg{token: lr.Token, id: lr.Id, username: lr.Username}
-	}
-}
-
-func cmdLoadConversations(tok uuid.UUID) tea.Cmd {
-	return func() tea.Msg {
-		resp, err := apiAuthed("GET", "/messages/conversations", tok, nil)
-		if err != nil {
-			return conversationsLoadedMsg{err: err}
-		}
-		defer resp.Body.Close()
-		if resp.StatusCode != http.StatusOK {
-			return conversationsLoadedMsg{err: fmt.Errorf("failed to load conversations (status %d)", resp.StatusCode)}
-		}
-		var convos []conversation
-		json.NewDecoder(resp.Body).Decode(&convos)
-		return conversationsLoadedMsg{convos: convos}
-	}
-}
-
-func cmdCreateConversation(tok uuid.UUID, usernames []string) tea.Cmd {
-	return func() tea.Msg {
-		resp, err := apiAuthed("POST", "/messages/conversation", tok, map[string]any{
-			"usernames": usernames,
-		})
-		if err != nil {
-			return conversationCreatedMsg{err: err}
-		}
-		defer resp.Body.Close()
-		if resp.StatusCode != http.StatusCreated {
-			return conversationCreatedMsg{err: fmt.Errorf("failed to create conversation (status %d)", resp.StatusCode)}
-		}
-		var cr struct {
-			ConversationId uuid.UUID `json:"conversationId"`
-		}
-		json.NewDecoder(resp.Body).Decode(&cr)
-		return conversationCreatedMsg{id: cr.ConversationId}
-	}
-}
-
-func cmdPollMessages(
-	tok uuid.UUID,
-	convId uuid.UUID,
-	lastId *uuid.UUID,
-	myId uuid.UUID,
-	cache map[uuid.UUID]string,
-) tea.Cmd {
-	// snapshot the cache so the goroutine is safe
-	snap := make(map[uuid.UUID]string, len(cache))
-	for k, v := range cache {
-		snap[k] = v
-	}
-	isInitialLoad := lastId == nil
-
-	return func() tea.Msg {
-		path := fmt.Sprintf("/messages/conversation/%s", convId)
-		if lastId != nil {
-			path = fmt.Sprintf("/messages/conversation/%s/%s", convId, lastId)
-		}
-
-		resp, err := apiAuthed("GET", path, tok, nil)
-		if err != nil {
-			return messagesLoadedMsg{err: err}
-		}
-		defer resp.Body.Close()
-		if resp.StatusCode != http.StatusOK {
-			return messagesLoadedMsg{err: fmt.Errorf("poll failed (status %d)", resp.StatusCode)}
-		}
-
-		var raw []rawMessage
-		json.NewDecoder(resp.Body).Decode(&raw)
-
-		newUsernames := make(map[uuid.UUID]string)
-		var resolved []resolvedMessage
-		var last *uuid.UUID
-
-		for _, m := range raw {
-			id := m.Id
-			last = &id
-
-			// On subsequent polls, skip own messages (we add them optimistically)
-			if !isInitialLoad && m.SenderId == myId {
-				continue
-			}
-
-			sender, ok := snap[m.SenderId]
-			if !ok {
-				r2, e2 := apiAuthed("GET", fmt.Sprintf("/auth/user/%s", m.SenderId), tok, nil)
-				if e2 == nil && r2.StatusCode == http.StatusOK {
-					var u struct {
-						Username string `json:"username"`
-					}
-					json.NewDecoder(r2.Body).Decode(&u)
-					r2.Body.Close()
-					sender = u.Username
-					snap[m.SenderId] = sender
-					newUsernames[m.SenderId] = sender
-				} else {
-					sender = m.SenderId.String()[:8]
-				}
-			}
-
-			resolved = append(resolved, resolvedMessage{
-				id:       m.Id,
-				sender:   sender,
-				senderId: m.SenderId,
-				text:     m.Message,
-			})
-		}
-
-		return messagesLoadedMsg{
-			messages:      resolved,
-			newUsernames:  newUsernames,
-			lastMessageId: last,
-		}
-	}
-}
-
-func cmdSendMessage(tok uuid.UUID, convId uuid.UUID, text string) tea.Cmd {
-	return func() tea.Msg {
-		resp, err := apiAuthed(
-			"POST",
-			fmt.Sprintf("/messages/m/%s", convId),
-			tok,
-			map[string]string{"message": text},
-		)
-		if err != nil {
-			return messageSentMsg{err: err}
-		}
-		resp.Body.Close()
-		if resp.StatusCode != http.StatusCreated {
-			return messageSentMsg{err: fmt.Errorf("send failed (status %d)", resp.StatusCode)}
-		}
-		return messageSentMsg{}
-	}
-}
-
-func cmdPollTick() tea.Cmd {
-	return tea.Tick(2*time.Second, func(time.Time) tea.Msg {
-		return pollTickMsg{}
-	})
-}
-
-// Add this struct to replace the raw string chat lines
-type chatLine struct {
-	text      string
-	arrivedAt time.Time
-	fromPoll  bool // true = came from polling, false = optimistic own send
-}
-
 // Fade tick message for animation
 type fadeTickMsg time.Time
 
@@ -325,12 +76,8 @@ var fadeColors = []string{
 	"237", // 4.5s — nearly invisible
 }
 
-// ═══════════════════════════════════════════════════════════════════════════
-// Model
-// ═══════════════════════════════════════════════════════════════════════════
-
 type model struct {
-	screen screen
+	screen client.Screen
 
 	// auth flow
 	authChoice string
@@ -343,15 +90,15 @@ type model struct {
 	myName string
 
 	// conversations
-	conversations []conversation
+	conversations []common.ConversationWithUsernames
+	conversationChats map[uuid.UUID][]common.ShortMessage
 	cursor        int
 
 	// active chat
 	convId        uuid.UUID
-	chatLines     []chatLine // ← changed from []string
+	chatLines     []client.ChatLine
 	lastMessageId *uuid.UUID
-	usernameCache map[uuid.UUID]string
-	fadingActive  bool // ← new: is the fade tick loop running?
+	fadingActive  bool
 
 	// widgets
 	textInput textinput.Model
@@ -375,9 +122,8 @@ func initialModel() model {
 	ti.Width = 60
 
 	return model{
-		screen:        screenAuthChoice,
+		screen:        client.ScreenAuthChoice,
 		textInput:     ti,
-		usernameCache: make(map[uuid.UUID]string),
 	}
 }
 
@@ -393,8 +139,8 @@ func (m model) renderChatContent() string {
 	now := time.Now()
 
 	for _, cl := range m.chatLines {
-		if cl.fromPoll && !cl.arrivedAt.IsZero() {
-			elapsed := now.Sub(cl.arrivedAt)
+		if cl.FromPoll && !cl.ArrivedAt.IsZero() {
+			elapsed := now.Sub(cl.ArrivedAt)
 			if elapsed < 5*time.Second {
 				step := int(elapsed.Milliseconds() / 500)
 				if step >= len(fadeColors) {
@@ -403,12 +149,12 @@ func (m model) renderChatContent() string {
 				tilde := lipgloss.NewStyle().
 					Foreground(lipgloss.Color(fadeColors[step])).
 					Render("~ ")
-				lines = append(lines, tilde+cl.text)
+				lines = append(lines, tilde+cl.Text)
 				continue
 			}
 		}
 		// no tilde — faded out or own message
-		lines = append(lines, cl.text)
+		lines = append(lines, cl.Text)
 	}
 	return strings.Join(lines, "\n")
 }
@@ -417,7 +163,7 @@ func (m model) renderChatContent() string {
 func (m model) hasFading() bool {
 	now := time.Now()
 	for _, cl := range m.chatLines {
-		if cl.fromPoll && !cl.arrivedAt.IsZero() && now.Sub(cl.arrivedAt) < 5*time.Second {
+		if cl.FromPoll && !cl.ArrivedAt.IsZero() && now.Sub(cl.ArrivedAt) < 5*time.Second {
 			return true
 		}
 	}
@@ -428,27 +174,19 @@ func (m model) Init() tea.Cmd {
 	return textinput.Blink
 }
 
-// ═══════════════════════════════════════════════════════════════════════════
-// Update — top level
-// ═══════════════════════════════════════════════════════════════════════════
-
 func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
 
-	// ── global keys ──────────────────────────────────────────────────
 	case tea.KeyMsg:
 		if msg.String() == "ctrl+c" {
 			return m, tea.Quit
 		}
 
-	// ── window resize ────────────────────────────────────────────────
 	case tea.WindowSizeMsg:
 		m.width = msg.Width
 		m.height = msg.Height
 		vpH := m.height - 5 // header + input + help + borders
-		if vpH < 1 {
-			vpH = 1
-		}
+		vpH = max(vpH, 1)
 		if !m.vpReady {
 			m.viewport = viewport.New(m.width, vpH)
 			m.viewport.SetContent("")
@@ -458,106 +196,105 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.viewport.Height = vpH
 		}
 
-	// ── async results (handled regardless of current screen) ─────────
-
+	// async states
 	case client.RegisterResultMsg:
 		m.loading = false
 		if msg.Err != nil {
 			m.errStr = msg.Err.Error()
-			m.screen = screenPassword
+			m.screen = client.ScreenPassword
 			return m, nil
 		}
 		m.status = "Registered ✔ — logging in…"
 		m.loading = true
-		return m, cmdLogin(m.username, m.password)
+		return m, controllers.Login(m.username, m.password)
 
-	case loginResultMsg:
+	case client.LoginResultMsg:
 		m.loading = false
-		if msg.err != nil {
-			m.errStr = msg.err.Error()
-			m.screen = screenPassword
+		if msg.Err != nil {
+			m.errStr = msg.Err.Error()
+			m.screen = client.ScreenPassword
 			return m, nil
 		}
-		m.token = msg.token
-		m.myId = msg.id
-		m.myName = msg.username
-		m.usernameCache[msg.id] = msg.username
 		m.status = "Loading conversations…"
 		m.loading = true
-		return m, cmdLoadConversations(m.token)
+		return m, controllers.CmdLoadConversations()
 
-	case conversationsLoadedMsg:
+	case client.ConversationsLoadedMsg:
 		m.loading = false
-		if msg.err != nil {
-			m.errStr = msg.err.Error()
+		if msg.Err != nil {
+			m.errStr = msg.Err.Error()
 		} else {
-			m.conversations = msg.convos
+			m.conversations = msg.Conversations
 			m.errStr = ""
+
+			if m.conversationChats == nil {
+				m.conversationChats = make(map[uuid.UUID][]common.ShortMessage)
+			}
 		}
 		if m.cursor >= len(m.conversations) {
 			m.cursor = max(0, len(m.conversations)-1)
 		}
-		m.screen = screenConversations
+		m.screen = client.ScreenConversations
 		return m, nil
 
-	case conversationCreatedMsg:
+	case client.ConversationCreatedMsg:
 		m.loading = false
-		if msg.err != nil {
-			m.errStr = msg.err.Error()
-			m.screen = screenConversations
+		if msg.Err != nil {
+			m.errStr = msg.Err.Error()
+			m.screen = client.ScreenConversations
 			return m, nil
 		}
-		m.enterChat(msg.id)
+		m.enterChat(msg.Id)
 		return m, tea.Batch(
-			cmdPollMessages(m.token, m.convId, nil, m.myId, m.usernameCache),
+			controllers.CmdPollMessages(m.convId, nil),
 			textinput.Blink,
 		)
 
-	case messagesLoadedMsg:
-		if msg.err == nil {
-			for k, v := range msg.newUsernames {
-				m.usernameCache[k] = v
+	case client.MessagesLoadedMsg:
+		if msg.Err == nil {
+			if m.conversationChats == nil {
+				m.conversationChats = make(map[uuid.UUID][]common.ShortMessage)
 			}
-			if msg.lastMessageId != nil {
-				m.lastMessageId = msg.lastMessageId
+			m.conversationChats[m.convId] = append(m.conversationChats[m.convId], msg.Messages...)
+			if msg.LastMessageId != nil {
+				m.lastMessageId = msg.LastMessageId
 			}
 
 			now := time.Now()
-			for _, rm := range msg.messages {
+			for _, rm := range msg.Messages {
 				var line string
-				if rm.senderId == m.myId {
-					line = myMsgStyle.Render(rm.sender+": ") + rm.text
+				if rm.Sender == m.username {
+					line = myMsgStyle.Render(rm.Sender+": ") + rm.Content
 				} else {
-					line = otherMsgStyle.Render(rm.sender+": ") + rm.text
+					line = otherMsgStyle.Render(rm.Sender+": ") + rm.Content
 				}
-				m.chatLines = append(m.chatLines, chatLine{
-					text:      line,
-					arrivedAt: now,
-					fromPoll:  true,
+				m.chatLines = append(m.chatLines, client.ChatLine{
+					Text:      line,
+					ArrivedAt: now,
+					FromPoll:  true,
 				})
 			}
 
-			if len(msg.messages) > 0 && m.vpReady {
+			if len(msg.Messages) > 0 && m.vpReady {
 				m.viewport.SetContent(m.renderChatContent())
 				m.viewport.GotoBottom()
 			}
 
 			// start fade tick loop if we got new messages and it's not already running
-			if len(msg.messages) > 0 && !m.fadingActive {
+			if len(msg.Messages) > 0 && !m.fadingActive {
 				m.fadingActive = true
-				if m.screen == screenChat {
-					return m, tea.Batch(cmdPollTick(), cmdFadeTick())
+				if m.screen == client.ScreenChat {
+					return m, tea.Batch(controllers.CmdPollTick(), cmdFadeTick())
 				}
 			}
 		}
-		if m.screen == screenChat {
-			return m, cmdPollTick()
+		if m.screen == client.ScreenChat {
+			return m, controllers.CmdPollTick()
 		}
 		return m, nil
 
-	// ── fade animation tick ──────────────────────────────────────────
 	case fadeTickMsg:
-		if m.screen != screenChat {
+		if m.screen != client.ScreenChat {
 			m.fadingActive = false
 			return m, nil
 		}
@@ -574,47 +311,50 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		return m, nil
 
-	case messageSentMsg:
-		if msg.err != nil {
-			m.errStr = msg.err.Error()
+	case client.MessageSentMsg:
+		if msg.Err != nil {
+			m.errStr = msg.Err.Error()
 		}
 		return m, nil
 
-	case pollTickMsg:
-		if m.screen == screenChat {
-			return m, cmdPollMessages(m.token, m.convId, m.lastMessageId, m.myId, m.usernameCache)
+	case client.PollTickMsg:
+		if m.screen == client.ScreenChat {
+			return m, controllers.CmdPollMessages(m.convId, m.lastMessageId)
 		}
 		return m, nil
 	}
 
-	// ── delegate to per-screen handlers ──────────────────────────────
+	// per-screen handlers
 	switch m.screen {
-	case screenAuthChoice:
+	case client.ScreenAuthChoice:
 		return m.updateAuthChoice(msg)
-	case screenUsername:
+	case client.ScreenUsername:
 		return m.updateUsername(msg)
-	case screenPassword:
+	case client.ScreenPassword:
 		return m.updatePassword(msg)
-	case screenConversations:
+	case client.ScreenConversations:
 		return m.updateConversations(msg)
-	case screenNewChat:
+	case client.ScreenNewChat:
 		return m.updateNewChat(msg)
-	case screenChat:
+	case client.ScreenChat:
 		return m.updateChat(msg)
 	}
 
 	return m, nil
 }
 
-// ── helper to transition into chat ──────────────────────────────────────────
-
 func (m *model) enterChat(convId uuid.UUID) {
 	m.convId = convId
-	m.chatLines = nil // already correct — now []chatLine
+	m.chatLines = nil
 	m.lastMessageId = nil
+	if chat, ok := m.conversationChats[convId]; ok {
+		if len(chat) > 0 {
+			m.lastMessageId = &chat[len(chat)-1].Id
+		}
+	}
 	m.errStr = ""
 	m.fadingActive = false
-	m.screen = screenChat
+	m.screen = client.ScreenChat
 	m.textInput.SetValue("")
 	m.textInput.Placeholder = "Type a message…"
 	m.textInput.EchoMode = textinput.EchoNormal
@@ -625,17 +365,14 @@ func (m *model) enterChat(convId uuid.UUID) {
 	}
 }
 
-// ═══════════════════════════════════════════════════════════════════════════
-// Per-screen update handlers
-// ═══════════════════════════════════════════════════════════════════════════
-
+// per-screen update handlers
 func (m model) updateAuthChoice(msg tea.Msg) (tea.Model, tea.Cmd) {
 	if key, ok := msg.(tea.KeyMsg); ok {
 		switch key.String() {
 		case "l", "r":
 			m.authChoice = key.String()
 			m.errStr = ""
-			m.screen = screenUsername
+			m.screen = client.ScreenUsername
 			m.textInput.SetValue("")
 			m.textInput.Placeholder = "Username"
 			m.textInput.EchoMode = textinput.EchoNormal
@@ -658,14 +395,14 @@ func (m model) updateUsername(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 			m.username = val
 			m.errStr = ""
-			m.screen = screenPassword
+			m.screen = client.ScreenPassword
 			m.textInput.SetValue("")
 			m.textInput.Placeholder = "Password"
 			m.textInput.EchoMode = textinput.EchoPassword
 			m.textInput.Focus()
 			return m, textinput.Blink
 		case "esc":
-			m.screen = screenAuthChoice
+			m.screen = client.ScreenAuthChoice
 			return m, nil
 		}
 	}
@@ -687,12 +424,12 @@ func (m model) updatePassword(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.loading = true
 			if m.authChoice == "r" {
 				m.status = "Registering…"
-				return m, cmdRegister(m.username, m.password)
+				return m, controllers.Register(m.username, m.password)
 			}
 			m.status = "Logging in…"
-			return m, cmdLogin(m.username, m.password)
+			return m, controllers.Login(m.username, m.password)
 		case "esc":
-			m.screen = screenUsername
+			m.screen = client.ScreenUsername
 			m.textInput.SetValue(m.username)
 			m.textInput.Placeholder = "Username"
 			m.textInput.EchoMode = textinput.EchoNormal
@@ -721,12 +458,12 @@ func (m model) updateConversations(msg tea.Msg) (tea.Model, tea.Cmd) {
 				c := m.conversations[m.cursor]
 				m.enterChat(c.Id)
 				return m, tea.Batch(
-					cmdPollMessages(m.token, m.convId, nil, m.myId, m.usernameCache),
+					controllers.CmdPollMessages(m.convId, m.lastMessageId),
 					textinput.Blink,
 				)
 			}
 		case "n":
-			m.screen = screenNewChat
+			m.screen = client.ScreenNewChat
 			m.errStr = ""
 			m.textInput.SetValue("")
 			m.textInput.Placeholder = "Usernames (comma-separated)"
@@ -736,7 +473,7 @@ func (m model) updateConversations(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case "r":
 			m.loading = true
 			m.status = "Refreshing…"
-			return m, cmdLoadConversations(m.token)
+			return m, controllers.CmdLoadConversations()
 		case "q":
 			return m, tea.Quit
 		}
@@ -753,7 +490,7 @@ func (m model) updateNewChat(msg tea.Msg) (tea.Model, tea.Cmd) {
 				return m, nil
 			}
 			usernames := []string{m.myName}
-			for _, u := range strings.Split(val, ",") {
+			for u := range strings.SplitSeq(val, ",") {
 				u = strings.TrimSpace(u)
 				if u != "" && u != m.myName {
 					usernames = append(usernames, u)
@@ -762,9 +499,9 @@ func (m model) updateNewChat(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.loading = true
 			m.errStr = ""
 			m.status = "Creating conversation…"
-			return m, cmdCreateConversation(m.token, usernames)
+			return m, controllers.CmdCreateConversation(usernames)
 		case "esc":
-			m.screen = screenConversations
+			m.screen = client.ScreenConversations
 			return m, nil
 		}
 	}
@@ -777,11 +514,11 @@ func (m model) updateChat(msg tea.Msg) (tea.Model, tea.Cmd) {
 	if key, ok := msg.(tea.KeyMsg); ok {
 		switch key.String() {
 		case "esc":
-			m.screen = screenConversations
+			m.screen = client.ScreenConversations
 			m.fadingActive = false
 			m.loading = true
 			m.status = "Loading conversations…"
-			return m, cmdLoadConversations(m.token)
+			return m, controllers.CmdLoadConversations()
 		case "enter":
 			text := strings.TrimSpace(m.textInput.Value())
 			if text == "" {
@@ -791,15 +528,15 @@ func (m model) updateChat(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 			// optimistic — own messages never get a tilde
 			line := myMsgStyle.Render(m.myName+": ") + text
-			m.chatLines = append(m.chatLines, chatLine{
-				text:     line,
-				fromPoll: false,
+			m.chatLines = append(m.chatLines, client.ChatLine{
+				Text:     line,
+				FromPoll: false,
 			})
 			if m.vpReady {
 				m.viewport.SetContent(m.renderChatContent())
 				m.viewport.GotoBottom()
 			}
-			return m, cmdSendMessage(m.token, m.convId, text)
+			return m, controllers.CmdSendMessage(m.convId, text)
 		}
 	}
 
@@ -821,17 +558,17 @@ func (m model) View() string {
 		return m.frame(statusStyle.Render("⏳ "+m.status) + "\n")
 	}
 	switch m.screen {
-	case screenAuthChoice:
+	case client.ScreenAuthChoice:
 		return m.viewAuthChoice()
-	case screenUsername:
+	case client.ScreenUsername:
 		return m.viewUsername()
-	case screenPassword:
+	case client.ScreenPassword:
 		return m.viewPassword()
-	case screenConversations:
+	case client.ScreenConversations:
 		return m.viewConversations()
-	case screenNewChat:
+	case client.ScreenNewChat:
 		return m.viewNewChat()
-	case screenChat:
+	case client.ScreenChat:
 		return m.viewChat()
 	}
 	return ""
@@ -891,7 +628,7 @@ func (m model) viewPassword() string {
 func (m model) viewConversations() string {
 	var b strings.Builder
 
-	b.WriteString(fmt.Sprintf("Logged in as %s\n\n", selectedStyle.Render(m.myName)))
+	fmt.Fprintf(&b, "Logged in as %s\n\n", selectedStyle.Render(m.myName))
 
 	if len(m.conversations) == 0 {
 		b.WriteString(statusStyle.Render("  No conversations yet.") + "\n")
@@ -904,7 +641,10 @@ func (m model) viewConversations() string {
 				cursor = "▸ "
 				style = selectedStyle
 			}
-			members := strings.Join(c.Members, ", ")
+			members := ""
+			for _, member := range c.Members {
+				members = members + member + ", "
+			}
 			line := fmt.Sprintf("%s%s", cursor, style.Render(members))
 			b.WriteString(line + "\n")
 		}

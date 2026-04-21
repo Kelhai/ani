@@ -83,3 +83,43 @@ func (as ApiService) Request(method, path string, payload any) (int, []byte, err
 	})
 }
 
+func (as ApiService) GET(path string, payload any) (int, []byte, error) {
+	return as.Request("GET", path, payload)
+}
+
+func (as ApiService) HEAD(path string, payload any) (int, []byte, error) {
+	return as.Request("HEAD", path, payload)
+}
+
+func (as ApiService) POST(path string, payload any) (int, []byte, error) {
+	return as.Request("POST", path, payload)
+}
+
+func (as ApiService) PUT(path string, payload any) (int, []byte, error) {
+	return as.Request("PUT", path, payload)
+}
+
+func (as ApiService) DELETE(path string, payload any) (int, []byte, error) {
+	return as.Request("DELETE", path, payload)
+}
+
+func (as ApiService) CONNECT(path string, payload any) (int, []byte, error) {
+	return as.Request("CONNECT", path, payload)
+}
+
+func (as ApiService) OPTIONS(path string, payload any) (int, []byte, error) {
+	return as.Request("OPTIONS", path, payload)
+}
+
+func (as ApiService) TRACE(path string, payload any) (int, []byte, error) {
+	return as.Request("TRACE", path, payload)
+}
+
+func (as ApiService) PATCH(path string, payload any) (int, []byte, error) {
+	return as.Request("PATCH", path, payload)
+}
+
+func (as ApiService) QUERY(path string, payload any) (int, []byte, error) {
+	return as.Request("QUERY", path, payload)
+}
+

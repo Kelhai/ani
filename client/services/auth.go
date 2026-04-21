@@ -36,3 +36,32 @@ func (_ AuthService) Register(username, password string) error {
 	return nil
 }
 
+func (_ AuthService) Login(username, password string) error {
+	userMap := map[string]string{"username": username, "password": password}
+	status, body, err := apiService.RawRequest("POST", "/auth/login", userMap, map[string]string{"Content-Type": "application/json"})
+	if err != nil {
+		return fmt.Errorf("Failed to login: %w", err)
+	}
+
+	if status != http.StatusOK {
+		if status == http.StatusUnauthorized {
+			return client.ErrLoginFailed
+		}
+		return fmt.Errorf("Invalid status code: %d", status)
+	}
+
+	session := new(common.Session)
+	err = json.Unmarshal(body, session)
+	if err != nil {
+		return fmt.Errorf("Failed to unmarshal user response: %w", err)
+	}
+
+	client.User = &common.User{
+		Id: session.UserId,
+		Username: username,
+	}
+	SessionToken = session.Id
+
+	return nil
+}
+

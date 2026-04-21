@@ -19,11 +19,6 @@ func setupAuthRoutes(e *echo.Echo) {
 	g.GET("/user/:userId", getUser, SessionMiddleware)
 }
 
-type loginResponse struct {
-	Token uuid.UUID `json:"token"`
-	common.User
-}
-
 func login(c *echo.Context) error {
 	var bodyUser common.AuthRequest
 
@@ -37,7 +32,7 @@ func login(c *echo.Context) error {
 		if errors.Is(err, common.ErrInvalidLogin) {
 			return c.NoContent(http.StatusUnauthorized)
 		}
-		log.Printf("Password verification failed: %s", err.Error())
+		log.Printf("Login failed: %s", err.Error())
 		return c.NoContent(http.StatusInternalServerError)
 	}
 
@@ -46,9 +41,10 @@ func login(c *echo.Context) error {
 		return c.String(http.StatusInternalServerError, "Failed to start session")
 	}
 
-	response := loginResponse{
-		Token: session.Id,
-		User:  *user,
+	response := common.Session{
+		Id: session.Id,
+		UserId:  user.Id,
+		ExpiresAt: session.ExpiresAt,
 	}
 
 	return c.JSON(http.StatusOK, response)

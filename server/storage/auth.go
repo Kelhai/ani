@@ -30,9 +30,12 @@ type Session struct {
 func createAuthSchema(db *bun.DB) {
 	ctx := context.Background()
 
-	// could do some error check
-	db.NewCreateTable().Model((*User)(nil)).IfNotExists().Exec(ctx)
-	db.NewCreateTable().Model((*Session)(nil)).IfNotExists().Exec(ctx)
+	if _, err := db.NewCreateTable().Model((*User)(nil)).IfNotExists().Exec(ctx); err != nil {
+		log.Fatalf("failed to create table: %v", err)
+	}
+	if _, err := db.NewCreateTable().Model((*Session)(nil)).IfNotExists().Exec(ctx); err != nil {
+		log.Fatalf("failed to create table: %v", err)
+	}
 }
 
 func (pgs PgStorage) GetUserByUsername(username string) (*common.User, error) {

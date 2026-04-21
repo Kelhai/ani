@@ -12,11 +12,6 @@ import (
 	"github.com/labstack/echo/v5"
 )
 
-type conversationResponse struct {
-	Id      uuid.UUID `json:"id"`
-	Members []string  `json:"members"`
-}
-
 func setupMessageRoutes(e *echo.Echo) {
 	g := e.Group("/messages", SessionMiddleware)
 
@@ -33,6 +28,8 @@ func getMessagesFromConversation(c *echo.Context) error {
 	if err != nil {
 		return echo.NewHTTPError(http.StatusBadRequest, "invalid conversation id")
 	}
+	log.Printf("userId from context: %v", c.Get("userId"))
+	log.Printf("convId from path: %v", c.Param("conversationId"))
 
 	err = messageService.CheckConversationMember(userId, conversationId)
 	if err != nil {
@@ -45,7 +42,7 @@ func getMessagesFromConversation(c *echo.Context) error {
 	messages, err := messageService.GetMessages(conversationId)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
-			return c.JSON(http.StatusOK, []storage.Message{})
+			return c.JSON(http.StatusNoContent, []common.ShortMessage{})
 		}
 		return echo.NewHTTPError(http.StatusInternalServerError, "failed to get messages")
 	}
@@ -57,7 +54,7 @@ func getMessagesFromConversationSince(c *echo.Context) error {
 	userId := c.Get("userId").(uuid.UUID)
 	messageId, err := uuid.Parse(c.Param("messageId"))
 	if err != nil {
-		return echo.NewHTTPError(http.StatusBadRequest, "invalid conversation id")
+		return echo.NewHTTPError(http.StatusBadRequest, "invalid message id")
 	}
 
 	message, err := messageService.GetMessage(messageId)
@@ -164,15 +161,15 @@ func getConversations(c *echo.Context) error {
 		return c.NoContent(http.StatusInternalServerError)
 	}
 
-	response := make([]conversationResponse, 0, len(conversations))
+	response := make([]common.ConversationWithUsernames, 0, len(conversations))
 	for _, conversation := range conversations {
-		response = append(response, conversationResponse{
+		response = append(response, common.ConversationWithUsernames{
 			Id: conversation.Id,
 		})
 
-		members := []string{}
-		for _, member := range conversation.Members {
-			members = append(members, usernameMap[member])
+		members := make([]string, len(conversation.Members))
+		for i, member := range conversation.Members {
+			members[i] = usernameMap[member]
 		}
 		response[len(response)-1].Members = members
 	}

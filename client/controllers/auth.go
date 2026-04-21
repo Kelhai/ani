@@ -29,3 +29,12 @@ func Register(username, password string) tea.Cmd {
 	}
 }
 
+func Login(username, password string) tea.Cmd {
+	return func() tea.Msg {
+		err := authService.Login(username, password)
+		if err != nil {
+			return client.LoginResultMsg{Err: err}
+		}
+		return client.LoginResultMsg{Username: username}
+	}
+}

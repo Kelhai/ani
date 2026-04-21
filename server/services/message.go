@@ -26,8 +26,36 @@ func (ms MessageService) GetMessagesSince(since uuid.UUID) ([]storage.Message, e
 	return pgStorage.GetMessagesAfter(since)
 }
 
-func (ms MessageService) GetMessages(conversationId uuid.UUID) ([]storage.Message, error) {
-	return pgStorage.GetMessagesByConversationId(conversationId)
+func (ms MessageService) GetMessages(conversationId uuid.UUID) ([]common.ShortMessage, error) {
+	messages, err := pgStorage.GetMessagesByConversationId(conversationId)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return []common.ShortMessage{}, nil
+		}
+		return nil, err
+	}
+
+	outputMessages := make([]common.ShortMessage, len(messages))
+	userIds := []uuid.UUID{}
+
+	for _, message := range messages {
+		userIds = append(userIds, message.SenderId)
+	}
+
+	userMap, err := pgStorage.GetUsersByIds(userIds)
+	if err != nil {
+		return nil, err
+	}
+
+	for i, message := range messages {
+		outputMessages[i] = common.ShortMessage{
+			Id:       message.Id,
+			Sender:   userMap[message.SenderId],
+			Content:  message.Message,
+		}
+	}
+
+	return outputMessages, nil
 }
 
 func (ms MessageService) CheckConversationMember(userId, conversationId uuid.UUID) error {
@@ -56,8 +84,8 @@ func (ms MessageService) GetOrCreateConversation(usernames []string) (*uuid.UUID
 	}
 
 	values := make([]uuid.UUID, 0, len(idMap))
-	for _, id := range idMap {
-		values = append(values, id)
+	for _, username := range usernames {
+		values = append(values, idMap[username])
 	}
 
 	conversation, err := pgStorage.GetOrCreateConversation(values)

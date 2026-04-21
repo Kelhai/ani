@@ -22,11 +22,12 @@ var SessionMiddleware = middleware.KeyAuth(
 			log.Println(err.Error())
 			return false, nil
 		}
-		log.Println(session)
 		if time.Now().After(session.ExpiresAt) {
 			return false, nil
 		}
 
+		log.Print(session)
+		log.Println(" Validated")
 		c.Set("userId", session.UserId)
 		return true, nil
 	},
