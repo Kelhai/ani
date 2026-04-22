@@ -58,8 +58,33 @@ type ConversationWithUsernames struct {
 
 // Messages
 
+type RatchetHeader struct {
+	KemCiphertext []byte `json:"kem_ct,omitempty"`
+	SenderKemPk   []byte `json:"kem_pub,omitempty"`
+}
+
 type ShortMessage struct {
-	Id       uuid.UUID `json:"id"`
-	Sender   string    `json:"sender"`
-	Content  string    `json:"content"`
+	Id             uuid.UUID     `json:"id"`
+	Sender         string        `json:"sender"`
+	ConversationId uuid.UUID     `json:"conversation_id"`
+	Ciphertext     []byte        `json:"ciphertext"`
+	Header         RatchetHeader `json:"header"`
+	Signature      []byte        `json:"signature"`
+}
+
+type Message struct {
+	bun.BaseModel `bun:"table:messages"`
+
+	Id             uuid.UUID `bun:"id,pk,type:uuid" json:"id"`
+	ConversationId uuid.UUID `bun:"conversation_id,notnull,type:uuid" json:"conversation_id"`
+	SenderId       uuid.UUID `bun:"sender_id,notnull,type:uuid" json:"sender_id"`
+	Ciphertext     []byte    `bun:"ciphertext,notnull" json:"ciphertext"`
+	Header         []byte    `bun:"header,notnull" json:"header"`
+	Signature      []byte    `bun:"signature,notnull" json:"signature"`
+}
+
+type SendMessageRequest struct {
+	Ciphertext []byte        `json:"ciphertext"`
+	Header     RatchetHeader `json:"header"`
+	Signature  []byte        `json:"signature"`
 }

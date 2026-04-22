@@ -1,19 +1,23 @@
 package storage
 
 import (
+	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
 
+	"github.com/Kelhai/ani/common"
 	"github.com/google/uuid"
 )
 
 type RatchetState struct {
-	SendChainKey   []byte
-	RecvChainKey   []byte
-	TheirKEMPubKey []byte
-	OurKEMPubKey   []byte
-	OurKEMPrivKey  []byte
+	SendChainKey  []byte
+	RecvChainKey  []byte
+	PeerKemPk     []byte
+	KemPk         []byte
+	KemSk         []byte
+	KemRatchetDue bool
+	InitHeader    *common.RatchetHeader
 }
 
 func ratchetPath(username, peer string) (string, error) {
@@ -25,7 +29,7 @@ func ratchetPath(username, peer string) (string, error) {
 }
 
 func SaveRatchetState(username, peer string, keyId uuid.UUID, state RatchetState) error {
-	raw, err := marshalRatchetState(state)
+	raw, err := json.Marshal(state)
 	if err != nil {
 		return fmt.Errorf("failed to marshal ratchet state: %w", err)
 	}
@@ -56,6 +60,13 @@ func LoadRatchetState(username, peer string, keyId uuid.UUID) (*RatchetState, er
 	if err != nil {
 		return nil, err
 	}
-	return unmarshalRatchetState(raw)
+
+	state := new(RatchetState)
+	err = json.Unmarshal(raw, state)
+	if err != nil {
+		return nil, fmt.Errorf("failed to unmarshal ratchet state: %w", err)
+	}
+
+	return state, nil
 }
 

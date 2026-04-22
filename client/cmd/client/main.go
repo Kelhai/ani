@@ -11,6 +11,7 @@ import (
 	"github.com/Kelhai/ani/client/config"
 	"github.com/Kelhai/ani/client/controllers"
 	"github.com/Kelhai/ani/client/services"
+	"github.com/Kelhai/ani/client/storage"
 	"github.com/Kelhai/ani/common"
 	"github.com/charmbracelet/bubbles/textinput"
 	"github.com/charmbracelet/bubbles/viewport"
@@ -246,53 +247,56 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		m.enterChat(msg.Id)
 		return m, tea.Batch(
-			controllers.CmdPollMessages(m.convId, nil),
+			controllers.CmdPollMessages(m.convId, m.username, nil),
 			textinput.Blink,
 		)
 
 	case client.MessagesLoadedMsg:
-		if msg.Err == nil {
-			if m.conversationChats == nil {
-				m.conversationChats = make(map[uuid.UUID][]common.ShortMessage)
-			}
-			m.conversationChats[m.convId] = append(m.conversationChats[m.convId], msg.Messages...)
-			if msg.LastMessageId != nil {
-				m.lastMessageId = msg.LastMessageId
+		if msg.Err != nil {
+			return m, nil
+		}
+
+		now := time.Now()
+
+		store, _ := storage.LoadConversationStore(m.username, m.convId)
+
+		m.chatLines = nil
+
+		for _, rm := range store.Messages {
+			var line string
+			if rm.Sender == m.username {
+				line = myMsgStyle.Render(rm.Sender+": ") + rm.Content
+			} else {
+				line = otherMsgStyle.Render(rm.Sender+": ") + rm.Content
 			}
 
-			now := time.Now()
-			for _, rm := range msg.Messages {
-				var line string
-				if rm.Sender == m.username {
-					line = myMsgStyle.Render(rm.Sender+": ") + rm.Content
-				} else {
-					line = otherMsgStyle.Render(rm.Sender+": ") + rm.Content
-				}
-				m.chatLines = append(m.chatLines, client.ChatLine{
-					Text:      line,
-					ArrivedAt: now,
-					FromPoll:  true,
-				})
-			}
+			m.chatLines = append(m.chatLines, client.ChatLine{
+				Text:      line,
+				ArrivedAt: now,
+				FromPoll:  true,
+			})
+		}
 
-			if len(msg.Messages) > 0 && m.vpReady {
-				m.viewport.SetContent(m.renderChatContent())
-				m.viewport.GotoBottom()
-			}
+		if m.vpReady {
+			m.viewport.SetContent(m.renderChatContent())
+			m.viewport.GotoBottom()
+		}
 
-			// start fade tick loop if we got new messages and it's not already running
-			if len(msg.Messages) > 0 && !m.fadingActive {
-				m.fadingActive = true
-				if m.screen == client.ScreenChat {
-					return m, tea.Batch(controllers.CmdPollTick(), cmdFadeTick())
-				}
+		if len(msg.Messages) > 0 && !m.fadingActive {
+			m.fadingActive = true
+			if m.screen == client.ScreenChat {
+				return m, tea.Batch(
+					controllers.CmdPollTick(),
+					cmdFadeTick(),
+				)
 			}
 		}
+
 		if m.screen == client.ScreenChat {
 			return m, controllers.CmdPollTick()
 		}
-		return m, nil
 
+		return m, nil
 	case fadeTickMsg:
 		if m.screen != client.ScreenChat {
 			m.fadingActive = false
@@ -321,7 +325,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case client.PollTickMsg:
 		if m.screen == client.ScreenChat {
-			return m, controllers.CmdPollMessages(m.convId, m.lastMessageId)
+			return m, controllers.CmdPollMessages(m.convId, m.username, m.lastMessageId)
 		}
 		return m, nil
 	}
@@ -460,7 +464,7 @@ func (m model) updateConversations(msg tea.Msg) (tea.Model, tea.Cmd) {
 				c := m.conversations[m.cursor]
 				m.enterChat(c.Id)
 				return m, tea.Batch(
-					controllers.CmdPollMessages(m.convId, m.lastMessageId),
+					controllers.CmdPollMessages(m.convId, m.username, m.lastMessageId),
 					textinput.Blink,
 				)
 			}
@@ -538,7 +542,15 @@ func (m model) updateChat(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.viewport.SetContent(m.renderChatContent())
 				m.viewport.GotoBottom()
 			}
-			return m, controllers.CmdSendMessage(m.convId, text)
+
+			var conversation common.ConversationWithUsernames
+			for _, c := range m.conversations {
+				if c.Id == m.convId {
+					conversation = c
+					break
+				}
+			}
+			return m, controllers.CmdSendMessage(conversation, m.username, text)
 		}
 	}
 

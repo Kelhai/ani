@@ -7,7 +7,6 @@ import (
 	"net/http"
 
 	"github.com/Kelhai/ani/common"
-	"github.com/Kelhai/ani/server/storage"
 	"github.com/google/uuid"
 	"github.com/labstack/echo/v5"
 )
@@ -71,7 +70,7 @@ func getMessagesFromConversationSince(c *echo.Context) error {
 	messages, err := messageService.GetMessagesSince(messageId)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
-			return c.JSON(http.StatusOK, []storage.Message{})
+			return c.JSON(http.StatusOK, []common.Message{})
 		}
 		return echo.NewHTTPError(http.StatusInternalServerError, "failed to get messages")
 	}
@@ -105,16 +104,14 @@ func sendMessageToConversation(c *echo.Context) error {
 		return echo.NewHTTPError(http.StatusBadRequest, "invalid conversation id")
 	}
 
-	var body struct {
-		Message string `json:"message"`
-	}
+	var body common.SendMessageRequest
 	if err := c.Bind(&body); err != nil {
 		return echo.NewHTTPError(http.StatusBadRequest, "invalid request")
 	}
 
 	senderId := c.Get("userId").(uuid.UUID)
 
-	messageId, err := messageService.SendMessageToConversation(body.Message, senderId, conversationId)
+	messageId, err := messageService.SendMessageToConversation(body.Ciphertext, body.Header, body.Signature, senderId, conversationId)
 	if err != nil {
 		return echo.NewHTTPError(http.StatusInternalServerError, "failed to send message")
 	}

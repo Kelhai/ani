@@ -2,13 +2,13 @@ package services
 
 import (
 	"database/sql"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"log"
 	"slices"
 
 	"github.com/Kelhai/ani/common"
-	"github.com/Kelhai/ani/server/storage"
 	"github.com/google/uuid"
 )
 
@@ -18,7 +18,7 @@ func SetupMessageService() MessageService {
 	return MessageService{}
 }
 
-func (ms MessageService) GetMessage(msgId uuid.UUID) (*storage.Message, error) {
+func (ms MessageService) GetMessage(msgId uuid.UUID) (*common.Message, error) {
 	return pgStorage.GetMessageById(msgId)
 }
 
@@ -32,7 +32,6 @@ func (ms MessageService) GetMessagesSince(since uuid.UUID) ([]common.ShortMessag
 	for i, m := range messages {
 		userIds[i] = m.SenderId
 	}
-
 	userMap, err := pgStorage.GetUsersByIds(userIds)
 	if err != nil {
 		return nil, err
@@ -40,10 +39,16 @@ func (ms MessageService) GetMessagesSince(since uuid.UUID) ([]common.ShortMessag
 
 	out := make([]common.ShortMessage, len(messages))
 	for i, m := range messages {
+		var header common.RatchetHeader
+		if err := json.Unmarshal(m.Header, &header); err != nil {
+			return nil, fmt.Errorf("failed to unmarshal header: %w", err)
+		}
 		out[i] = common.ShortMessage{
-			Id:      m.Id,
-			Sender:  userMap[m.SenderId],
-			Content: m.Message,
+			Id:             m.Id,
+			Sender:         userMap[m.SenderId],
+			ConversationId: m.ConversationId,
+			Ciphertext:     m.Ciphertext,
+			Header:         header,
 		}
 	}
 
@@ -59,27 +64,31 @@ func (ms MessageService) GetMessages(conversationId uuid.UUID) ([]common.ShortMe
 		return nil, err
 	}
 
-	outputMessages := make([]common.ShortMessage, len(messages))
-	userIds := []uuid.UUID{}
-
-	for _, message := range messages {
-		userIds = append(userIds, message.SenderId)
+	userIds := make([]uuid.UUID, len(messages))
+	for i, m := range messages {
+		userIds[i] = m.SenderId
 	}
-
 	userMap, err := pgStorage.GetUsersByIds(userIds)
 	if err != nil {
 		return nil, err
 	}
 
-	for i, message := range messages {
-		outputMessages[i] = common.ShortMessage{
-			Id:       message.Id,
-			Sender:   userMap[message.SenderId],
-			Content:  message.Message,
+	out := make([]common.ShortMessage, len(messages))
+	for i, m := range messages {
+		var header common.RatchetHeader
+		if err := json.Unmarshal(m.Header, &header); err != nil {
+			return nil, fmt.Errorf("failed to unmarshal header: %w", err)
+		}
+		out[i] = common.ShortMessage{
+			Id:             m.Id,
+			Sender:         userMap[m.SenderId],
+			ConversationId: m.ConversationId,
+			Ciphertext:     m.Ciphertext,
+			Header:         header,
 		}
 	}
 
-	return outputMessages, nil
+	return out, nil
 }
 
 func (ms MessageService) CheckConversationMember(userId, conversationId uuid.UUID) error {
@@ -155,22 +164,30 @@ func (ms MessageService) GetConversations(userId uuid.UUID) ([]common.Conversati
 	return result, nil
 }
 
-func (ms MessageService) SendMessageToConversation(messageBody string, sender uuid.UUID, conversation uuid.UUID) (*uuid.UUID, error) {
+func (ms MessageService) SendMessageToConversation(ciphertext []byte, header common.RatchetHeader, signature []byte, sender uuid.UUID, conversation uuid.UUID) (*uuid.UUID, error) {
 	id, err := uuid.NewV7()
 	if err != nil {
 		return nil, common.ErrUuidFailed
 	}
-	message := storage.Message{
-		Id:             id,
-		Message:        messageBody,
-		ConversationId: conversation,
-		SenderId:       sender,
+
+	headerBytes, err := json.Marshal(header)
+	if err != nil {
+		return nil, fmt.Errorf("failed to marshal header: %w", err)
 	}
 
-	err = pgStorage.InsertMessage(message)
-	if err != nil {
+	message := common.Message{
+		Id:             id,
+		Ciphertext:     ciphertext,
+		Header:         headerBytes,
+		ConversationId: conversation,
+		SenderId:       sender,
+		Signature:      signature,
+	}
+
+	if err = pgStorage.InsertMessage(message); err != nil {
 		return nil, errors.Join(common.ErrPgInsertFailed, err)
 	}
 
 	return &message.Id, nil
 }
+

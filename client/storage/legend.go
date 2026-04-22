@@ -145,3 +145,21 @@ func FindKeyByTag(username string, tag KeyTag) (uuid.UUID, *LegendEntry, error) 
 	}
 	return uuid.Nil, nil, fmt.Errorf("no key with tag %s found", tag)
 }
+
+func FindKeyByPeer(username string, tag KeyTag, peer string) (uuid.UUID, *LegendEntry, error) {
+	legend, err := loadLegend(username)
+	if err != nil {
+		return uuid.Nil, nil, err
+	}
+	for idStr, entry := range legend.Keys {
+		if entry.Tag == tag && entry.Type == peer {
+			id, err := uuid.Parse(idStr)
+			if err != nil {
+				return uuid.Nil, nil, fmt.Errorf("invalid UUID in legend: %w", err)
+			}
+			e := entry
+			return id, &e, nil
+		}
+	}
+	return uuid.Nil, nil, fmt.Errorf("no key with tag %s for peer %s found", tag, peer)
+}

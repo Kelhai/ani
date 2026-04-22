@@ -7,6 +7,7 @@ import (
 	"github.com/google/uuid"
 
 	"github.com/Kelhai/ani/client"
+	"github.com/Kelhai/ani/common"
 )
 
 func CmdLoadConversations() tea.Cmd {
@@ -33,10 +34,11 @@ func CmdCreateConversation(usernames []string) tea.Cmd {
 
 func CmdPollMessages(
 	convId uuid.UUID,
+	username string,
 	lastMessageId *uuid.UUID,
 ) tea.Cmd {
 	return func() tea.Msg {
-		messages, err := messageService.GetMessageFromConversation(convId, lastMessageId)
+		messages, err := messageService.GetMessageFromConversation(convId, username, lastMessageId)
 		if err != nil {
 			return client.MessagesLoadedMsg{Err: err}
 		}
@@ -53,9 +55,16 @@ func CmdPollMessages(
 	}
 }
 
-func CmdSendMessage(convId uuid.UUID, text string) tea.Cmd {
+func CmdSendMessage(conversation common.ConversationWithUsernames, myUsername, text string) tea.Cmd {
 	return func() tea.Msg {
-		messageId, err := messageService.SendMessage(convId, text)
+		recipients := []string{}
+		for _, u := range conversation.Members {
+			if u != myUsername {
+				recipients = append(recipients, u)
+			}
+		}
+
+		messageId, err := messageService.SendMessage(conversation.Id, myUsername, recipients, text)
 		if err != nil {
 			return client.MessageSentMsg{Err: err}
 		}

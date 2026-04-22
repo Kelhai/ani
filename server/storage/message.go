@@ -25,7 +25,7 @@ func createMessageSchema(db *bun.DB) {
 	if _, err := db.NewCreateTable().Model((*ConversationMember)(nil)).IfNotExists().Exec(ctx); err != nil {
 		log.Fatalf("failed to create table: %v", err)
 	}
-	if _, err := db.NewCreateTable().Model((*Message)(nil)).IfNotExists().Exec(ctx); err != nil {
+	if _, err := db.NewCreateTable().Model((*common.Message)(nil)).IfNotExists().Exec(ctx); err != nil {
 		log.Fatalf("failed to create table: %v", err)
 	}
 	_, err := db.ExecContext(ctx, `
@@ -58,15 +58,6 @@ type ConversationMember struct {
 
 	ConversationId uuid.UUID `bun:"conversation_id,type:uuid,notnull"`
 	UserId         uuid.UUID `bun:"user_id,type:uuid,notnull"`
-}
-
-type Message struct {
-	bun.BaseModel `bun:"table:messages"`
-
-	Id             uuid.UUID `bun:"id,pk,type:uuid" json:"id"`
-	ConversationId uuid.UUID `bun:"conversation_id,notnull,type:uuid" json:"conversationId"`
-	SenderId       uuid.UUID `bun:"sender_id,notnull,type:uuid" json:"senderId"`
-	Message        string    `bun:"message,notnull" json:"message"`
 }
 
 func conversationKey(members []uuid.UUID) string {
@@ -158,8 +149,8 @@ func (pgs PgStorage) GetConversationsByUserId(userId uuid.UUID) ([]Conversation,
 	return conversations, nil
 }
 
-func (pgs PgStorage) GetMessagesByConversationId(conversationId uuid.UUID) ([]Message, error) {
-	var messages []Message
+func (pgs PgStorage) GetMessagesByConversationId(conversationId uuid.UUID) ([]common.Message, error) {
+	var messages []common.Message
 	err := pgs.db.NewSelect().
 		Model(&messages).
 		Where("conversation_id = ?", conversationId).
@@ -173,8 +164,8 @@ func (pgs PgStorage) GetMessagesByConversationId(conversationId uuid.UUID) ([]Me
 	return messages, nil
 }
 
-func (pgs PgStorage) GetMessageById(msgId uuid.UUID) (*Message, error) {
-	var message Message
+func (pgs PgStorage) GetMessageById(msgId uuid.UUID) (*common.Message, error) {
+	var message common.Message
 	err := pgs.db.NewSelect().
 		Model(&message).
 		Where("id = ?", msgId).
@@ -190,8 +181,8 @@ func (pgs PgStorage) GetMessageById(msgId uuid.UUID) (*Message, error) {
 	return &message, nil
 }
 
-func (pgs PgStorage) GetMessagesAfter(after uuid.UUID) ([]Message, error) {
-	var messages []Message
+func (pgs PgStorage) GetMessagesAfter(after uuid.UUID) ([]common.Message, error) {
+	var messages []common.Message
 	err := pgs.db.NewSelect().
 		Model(&messages).
 		Where("conversation_id = (SELECT conversation_id FROM messages WHERE id = ?)", after).
@@ -205,7 +196,7 @@ func (pgs PgStorage) GetMessagesAfter(after uuid.UUID) ([]Message, error) {
 	return messages, nil
 }
 
-func (pgs PgStorage) InsertMessage(message Message) error {
+func (pgs PgStorage) InsertMessage(message common.Message) error {
 	_, err := pgs.db.NewInsert().Model(&message).Exec(context.Background())
 	if err != nil {
 		log.Printf("Failed to insert new message: %s", err.Error())
