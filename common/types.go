@@ -19,6 +19,20 @@ type AuthRequest struct {
 	Password string `json:"password"`
 }
 
+type AuthBlob struct {
+	SignatureAlgorithm string    `json:"s_type"`   // we only support "ML-DSA-87" for now
+	HashingAlgorithm   string    `json:"h_type"`   // "" for ML-DSA-87
+	Username           string    `json:"username"`
+	SignedTime         time.Time `json:"s_time"`
+	TimeToLive         time.Time `json:"ttl"`
+	Uuid               uuid.UUID `json:"uuid"`
+}
+
+type AuthEnvelope struct {
+	Blob      AuthBlob `json:"blob"`
+	Signature []byte   `json:"signature"`
+}
+
 type Session struct {
 	Id        uuid.UUID `json:"id"`
 	UserId    uuid.UUID `json:"user_id"`
