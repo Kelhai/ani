@@ -171,3 +171,21 @@ func (_ AuthService) Login(username, password string) error {
 	SessionToken = session.Id
 	return nil
 }
+
+func (_ AuthService) GetUserKeys(username string) (*common.User, error) {
+	status, body, err := apiService.GET("/auth/user/"+username, nil)
+	if err != nil {
+		return nil, fmt.Errorf("failed to fetch user keys: %w", err)
+	}
+	if status == http.StatusNotFound {
+		return nil, client.ErrUserNotFound
+	}
+	if status != http.StatusOK {
+		return nil, client.ErrUnknownErr
+	}
+	user := new(common.User)
+	if err := json.Unmarshal(body, user); err != nil {
+		return nil, fmt.Errorf("failed to unmarshal user: %w", err)
+	}
+	return user, nil
+}

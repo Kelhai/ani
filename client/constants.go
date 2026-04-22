@@ -48,6 +48,7 @@ var (
 var (
 	ErrUsernameTaken = errors.New("Username taken")
 	ErrLoginFailed   = errors.New("Failed to login")
+	ErrUserNotFound  = errors.New("Failed to find user")
 	ErrNoAuthToken   = errors.New("No session token")
 	ErrUnknownErr    = errors.New("Unknown error")
 	ErrJsonUnmarshal = errors.New("Failed to unmarshal json")
