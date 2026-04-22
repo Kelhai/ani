@@ -2,11 +2,15 @@ package services
 
 import (
 	"bytes"
+	"crypto/tls"
+	"crypto/x509"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
+	"log"
 	"net/http"
+	"os"
 	"time"
 
 	"github.com/Kelhai/ani/client/config"
@@ -20,19 +24,39 @@ var (
 var (
 	SessionToken uuid.UUID
 
-	apiService ApiService = ApiService{}
+	cert []byte
+	pool *x509.CertPool
 
+	apiService ApiService
+
+	httpClient *http.Client
+)
+
+type ApiService struct{}
+
+func SetupApiService() {
+	var err error
+	cert, err = os.ReadFile("cert.pem")
+	if err != nil {
+		log.Fatal("Failed to read cert")
+	}
+	pool = x509.NewCertPool()
+	if ok := pool.AppendCertsFromPEM(cert); !ok {
+		log.Fatal("failed to parse cert")
+	}
 	httpClient = &http.Client{
 		Timeout: 10 * time.Second,
 		Transport: &http.Transport{
 			MaxIdleConns:        100,
 			IdleConnTimeout:     90 * time.Second,
 			TLSHandshakeTimeout: 10 * time.Second,
+			TLSClientConfig: &tls.Config{
+				RootCAs: pool,
+			},
 		},
 	}
-)
-
-type ApiService struct{}
+	apiService = ApiService{}
+}
 
 func (_ ApiService) RawRequest(method, path string, payload any, headers map[string]string) (int, []byte, error) {
 	var (

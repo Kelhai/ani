@@ -39,7 +39,7 @@ func SetupConfig() error {
 		serverPort = "52971"
 	}
 
-	BaseUrl = fmt.Sprintf("http://%s:%s", serverHost, serverPort)
+	BaseUrl = fmt.Sprintf("https://%s:%s", serverHost, serverPort)
 
 	return nil
 }

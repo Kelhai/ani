@@ -1,17 +1,14 @@
 package services
 
 import (
-	"crypto/rand"
-	"crypto/subtle"
-	"encoding/base64"
-	"errors"
+	"encoding/json"
 	"fmt"
 	"log"
-	"strings"
+	"time"
 
 	"github.com/Kelhai/ani/common"
+	"github.com/cloudflare/circl/sign/mldsa/mldsa87"
 	"github.com/google/uuid"
-	"golang.org/x/crypto/argon2"
 )
 
 type AuthService struct{}
@@ -20,27 +17,35 @@ func SetupAuthService() AuthService {
 	return AuthService{}
 }
 
-func (as AuthService) VerifyPassword(username, password string) (*common.User, error) {
-	// customer errors for if user doesnt exist or error?
-	user, err := pgStorage.GetUserByUsername(username)
-	if err != nil {
-		log.Printf("Failed to get user: %s", err.Error())
-		return nil, errors.New("user does not exist")
+func (as AuthService) VerifyEnvelope(envelope common.AuthEnvelope) (*common.User, error) {
+	if time.Now().After(envelope.Blob.TimeToLive) {
+		return nil, common.ErrInvalidLogin
 	}
 
-	fullHash := strings.Split(user.PasswordHash, "$")
-	salt, err := base64.StdEncoding.DecodeString(fullHash[0])
-	if err != nil {
-		return nil, errors.New("Failed to base64 decode salt")
+	if envelope.Blob.SignatureAlgorithm != "ML-DSA-87" {
+		return nil, common.ErrInvalidLogin
 	}
 
-	storedHash, err := base64.StdEncoding.DecodeString(fullHash[1])
+	user, err := pgStorage.GetUserByUsername(envelope.Blob.Username)
 	if err != nil {
-		return nil, errors.New("Failed to base64 decode hash")
+		return nil, common.ErrInvalidLogin
 	}
 
-	hash := argon2.IDKey([]byte(password), salt, 1, 64*1024, 4, 32)
-	if subtle.ConstantTimeCompare(hash, storedHash) != 1 {
+	if user.IdentityPk == nil {
+		return nil, common.ErrInvalidLogin
+	}
+
+	blobBytes, err := json.Marshal(envelope.Blob)
+	if err != nil {
+		return nil, fmt.Errorf("failed to marshal blob: %w", err)
+	}
+
+	pk := new(mldsa87.PublicKey)
+	if err := pk.UnmarshalBinary(user.IdentityPk); err != nil {
+		return nil, fmt.Errorf("failed to unmarshal identity key: %w", err)
+	}
+
+	if !mldsa87.Verify(pk, blobBytes, nil, envelope.Signature) {
 		return nil, common.ErrInvalidLogin
 	}
 
@@ -62,28 +67,30 @@ func (as AuthService) GetSessionByToken(token uuid.UUID) (*common.Session, error
 	return session, nil
 }
 
-func (as AuthService) CreateUser(username, password string) (*common.User, error) {
+func (as AuthService) CreateUser(username string, identityPk []byte) (*common.User, error) {
+	if len(identityPk) != mldsa87.PublicKeySize {
+		return nil, fmt.Errorf("invalid identity key size")
+	}
+
+	// validate it's actually a parseable key
+	pk := new(mldsa87.PublicKey)
+	if err := pk.UnmarshalBinary(identityPk); err != nil {
+		return nil, fmt.Errorf("invalid identity key: %w", err)
+	}
+
 	id, err := uuid.NewV7()
 	if err != nil {
 		log.Printf("Failed to generate UUID: %s", err.Error())
 		return nil, fmt.Errorf("%w: %w", common.ErrUuidFailed, err)
 	}
 
-	salt := make([]byte, 16)
-	rand.Read(salt)
-
-	hash := argon2.IDKey([]byte(password), salt, 1, 64*1024, 4, 32)
-	stored := base64.StdEncoding.EncodeToString(salt) + "$" +
-		base64.StdEncoding.EncodeToString(hash)
-
 	user := common.User{
-		Id:           id,
-		Username:     username,
-		PasswordHash: stored,
+		Id:         id,
+		Username:   username,
+		IdentityPk: identityPk,
 	}
 
-	err = pgStorage.AddUser(user)
-	if err != nil {
+	if err = pgStorage.AddUser(user); err != nil {
 		return nil, err
 	}
 
@@ -106,8 +113,5 @@ func (as AuthService) GetUserById(userId uuid.UUID) (*common.User, error) {
 		return nil, err
 	}
 
-	return &common.User{
-		Id:       user.Id,
-		Username: user.Username,
-	}, nil
+	return user, nil
 }

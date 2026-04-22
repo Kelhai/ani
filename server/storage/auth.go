@@ -11,14 +11,6 @@ import (
 	"github.com/uptrace/bun"
 )
 
-type User struct {
-	bun.BaseModel `bun:"table:users"`
-
-	Id           uuid.UUID `bun:"id,pk,type:uuid"`
-	Username     string    `bun:"username,unique,notnull"`
-	PasswordHash string    `bun:"password_hash,notnull"`
-}
-
 type Session struct {
 	bun.BaseModel `bun:"table:sessions"`
 
@@ -30,7 +22,7 @@ type Session struct {
 func createAuthSchema(db *bun.DB) {
 	ctx := context.Background()
 
-	if _, err := db.NewCreateTable().Model((*User)(nil)).IfNotExists().Exec(ctx); err != nil {
+	if _, err := db.NewCreateTable().Model((*common.User)(nil)).IfNotExists().Exec(ctx); err != nil {
 		log.Fatalf("failed to create table: %v", err)
 	}
 	if _, err := db.NewCreateTable().Model((*Session)(nil)).IfNotExists().Exec(ctx); err != nil {
@@ -39,19 +31,15 @@ func createAuthSchema(db *bun.DB) {
 }
 
 func (pgs PgStorage) GetUserByUsername(username string) (*common.User, error) {
-	user := User{}
+	user := new(common.User)
 	err := pgs.db.NewSelect().
-		Model(&user).
+		Model(user).
 		Where("username = ?", username).
 		Scan(context.Background())
 	if err != nil {
 		return nil, fmt.Errorf("Failed to get user: %w", err)
 	}
-	return &common.User{
-		Id:           user.Id,
-		Username:     user.Username,
-		PasswordHash: user.PasswordHash,
-	}, nil
+	return user, nil
 }
 
 func (pgs PgStorage) GetUserIdsByUsernames(usernames []string) (map[string]uuid.UUID, error) {
@@ -59,7 +47,7 @@ func (pgs PgStorage) GetUserIdsByUsernames(usernames []string) (map[string]uuid.
 		return map[string]uuid.UUID{}, nil
 	}
 
-	var users []User
+	var users []common.User
 	err := pgs.db.NewSelect().
 		Model(&users).
 		Where("username IN (?)", bun.List(usernames)).
@@ -77,9 +65,9 @@ func (pgs PgStorage) GetUserIdsByUsernames(usernames []string) (map[string]uuid.
 }
 
 func (pgs PgStorage) GetUserIdByUsername(username string) (*uuid.UUID, error) {
-	user := User{}
+	user := new(common.User)
 	err := pgs.db.NewSelect().
-		Model(&user).
+		Model(user).
 		Where("username = ?", username).
 		Scan(context.Background())
 	if err != nil {
@@ -95,7 +83,7 @@ func (pgs PgStorage) GetUsersByIds(userIds []uuid.UUID) (map[uuid.UUID]string, e
 		return map[uuid.UUID]string{}, nil
 	}
 
-	var users []User
+	var users []common.User
 	err := pgs.db.NewSelect().
 		Model(&users).
 		Where("id IN (?)", bun.List(userIds)).
@@ -113,12 +101,7 @@ func (pgs PgStorage) GetUsersByIds(userIds []uuid.UUID) (map[uuid.UUID]string, e
 }
 
 func (pgs PgStorage) AddUser(user common.User) error {
-	pgUser := User{
-		Id:           user.Id,
-		Username:     user.Username,
-		PasswordHash: user.PasswordHash,
-	}
-	_, err := pgs.db.NewInsert().Model(&pgUser).Exec(context.Background())
+	_, err := pgs.db.NewInsert().Model(&user).Exec(context.Background())
 	if err != nil {
 		log.Printf("Failed to insert user: %s", err.Error())
 		return fmt.Errorf("Failed to insert user: %w: %w", common.ErrPgInsertFailed, err)
@@ -189,8 +172,8 @@ func (pgs PgStorage) NewSession(userId uuid.UUID) (*common.Session, error) {
 	}, nil
 }
 
-func (pgs PgStorage) GetUser(userId uuid.UUID) (*User, error) {
-	user := User{}
+func (pgs PgStorage) GetUser(userId uuid.UUID) (*common.User, error) {
+	user := new(common.User)
 	err := pgs.db.NewSelect().
 		Model(&user).
 		Where("id = ?", userId).
@@ -199,5 +182,5 @@ func (pgs PgStorage) GetUser(userId uuid.UUID) (*User, error) {
 		return nil, common.ErrNotFound
 	}
 
-	return &user, nil
+	return user, nil
 }

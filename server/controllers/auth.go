@@ -20,19 +20,18 @@ func setupAuthRoutes(e *echo.Echo) {
 }
 
 func login(c *echo.Context) error {
-	var bodyUser common.AuthRequest
-
-	err := c.Bind(&bodyUser)
+	var envelope common.AuthEnvelope
+	err := c.Bind(&envelope)
 	if err != nil {
 		return c.String(http.StatusBadRequest, fmt.Sprintf("Bad json: %s", err.Error()))
 	}
 
-	user, err := authService.VerifyPassword(bodyUser.Username, bodyUser.Password)
+	user, err := authService.VerifyEnvelope(envelope)
 	if err != nil {
 		if errors.Is(err, common.ErrInvalidLogin) {
 			return c.NoContent(http.StatusUnauthorized)
 		}
-		log.Printf("Login failed: %s", err.Error())
+		log.Printf("Signed login failed: %s", err.Error())
 		return c.NoContent(http.StatusInternalServerError)
 	}
 
@@ -41,24 +40,22 @@ func login(c *echo.Context) error {
 		return c.String(http.StatusInternalServerError, "Failed to start session")
 	}
 
-	response := common.Session{
-		Id: session.Id,
-		UserId:  user.Id,
+	return c.JSON(http.StatusOK, common.Session{
+		Id:        session.Id,
+		UserId:    user.Id,
 		ExpiresAt: session.ExpiresAt,
-	}
-
-	return c.JSON(http.StatusOK, response)
+	})
 }
 
 func register(c *echo.Context) error {
-	var bodyUser common.AuthRequest
+	var bodyUser common.RegisterRequest
 
 	err := c.Bind(&bodyUser)
 	if err != nil {
 		return c.String(http.StatusBadRequest, fmt.Sprintf("Bad json: %s", err.Error()))
 	}
 
-	user, err := authService.CreateUser(bodyUser.Username, bodyUser.Password)
+	user, err := authService.CreateUser(bodyUser.Username, bodyUser.IdentityPk)
 	if err != nil {
 		return c.String(http.StatusConflict, "User already exists")
 	}
