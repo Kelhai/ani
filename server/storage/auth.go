@@ -11,14 +11,6 @@ import (
 	"github.com/uptrace/bun"
 )
 
-type User struct {
-	bun.BaseModel `bun:"table:users"`
-
-	Id           uuid.UUID `bun:"id,pk,type:uuid"`
-	Username     string    `bun:"username,unique,notnull"`
-	PasswordHash string    `bun:"password_hash,notnull"`
-}
-
 type Session struct {
 	bun.BaseModel `bun:"table:sessions"`
 
