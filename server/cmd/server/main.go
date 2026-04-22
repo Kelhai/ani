@@ -57,7 +57,7 @@ func main() {
 		HideBanner:      true,
 	}
 
-	if err := startConfig.Start(ctx, e); err != nil {
+	if err := startConfig.StartTLS(ctx, e, "cert.pem", "key.pem"); err != nil {
 		e.Logger.Error("failed to start server", "error", err)
 	}
 }

@@ -10,6 +10,7 @@ import (
 	"github.com/Kelhai/ani/client"
 	"github.com/Kelhai/ani/client/config"
 	"github.com/Kelhai/ani/client/controllers"
+	"github.com/Kelhai/ani/client/services"
 	"github.com/Kelhai/ani/common"
 	"github.com/charmbracelet/bubbles/textinput"
 	"github.com/charmbracelet/bubbles/viewport"
@@ -697,6 +698,8 @@ func main() {
 		log.Fatalf("Failed to load config: %s", err.Error())
 		os.Exit(1)
 	}
+
+	services.SetupApiService()
 
 	p := tea.NewProgram(
 		initialModel(),
