@@ -1,6 +1,7 @@
 package services
 
 import (
+	"crypto/mlkem"
 	"crypto/rand"
 	"encoding/json"
 	"fmt"
@@ -19,29 +20,43 @@ type AuthService struct{}
 func (_ AuthService) Register(username, password string) error {
 	storage.MasterKey = storage.DeriveMasterKey(password, username)
 
+	// generate signing keypair
 	pk, sk, err := mldsa87.GenerateKey(nil)
 	if err != nil {
 		return fmt.Errorf("failed to generate identity keypair: %w", err)
 	}
-
 	pkBytes, err := pk.MarshalBinary()
 	if err != nil {
-		return fmt.Errorf("failed to marshal public key: %w", err)
+		return fmt.Errorf("failed to marshal identity public key: %w", err)
 	}
 	skBytes, err := sk.MarshalBinary()
 	if err != nil {
-		return fmt.Errorf("failed to marshal private key: %w", err)
+		return fmt.Errorf("failed to marshal identity private key: %w", err)
 	}
 
-	keyId, err := uuid.NewV7()
+	// generate KEM key
+	kemDk, err := mlkem.GenerateKey768()
 	if err != nil {
-		return fmt.Errorf("failed to generate key UUID: %w", err)
+		return fmt.Errorf("failed to generate KEM keypair: %w", err)
+	}
+	kemEkBytes := kemDk.EncapsulationKey().Bytes()
+	kemDkBytes := kemDk.Bytes()
+
+	// sign the KEM public key
+	kemPkSig, err := sk.Sign(rand.Reader, kemEkBytes, nil)
+	if err != nil {
+		return fmt.Errorf("failed to sign KEM public key: %w", err)
 	}
 
-	if err := storage.SaveKeyPair(username, keyId, pkBytes, skBytes); err != nil {
+	// save identity keypair
+	identityKeyId, err := uuid.NewV7()
+	if err != nil {
+		return fmt.Errorf("failed to generate identity key UUID: %w", err)
+	}
+	if err := storage.SaveKeyPair(username, identityKeyId, pkBytes, skBytes); err != nil {
 		return fmt.Errorf("failed to save identity keypair: %w", err)
 	}
-	if err := storage.AddLegendEntry(username, keyId, storage.LegendEntry{
+	if err := storage.AddLegendEntry(username, identityKeyId, storage.LegendEntry{
 		Tag:     storage.KeyTagIdentity,
 		Type:    "ML-DSA-87",
 		Created: time.Now(),
@@ -49,15 +64,33 @@ func (_ AuthService) Register(username, password string) error {
 		return fmt.Errorf("failed to update legend: %w", err)
 	}
 
-	payload := common.RegisterRequest{
-		Username:   username,
-		IdentityPk: pkBytes,
+	// save KEM keypair
+	kemKeyId, err := uuid.NewV7()
+	if err != nil {
+		return fmt.Errorf("failed to generate KEM key UUID: %w", err)
 	}
+	if err := storage.SaveKeyPair(username, kemKeyId, kemEkBytes, kemDkBytes); err != nil {
+		return fmt.Errorf("failed to save KEM keypair: %w", err)
+	}
+	if err := storage.AddLegendEntry(username, kemKeyId, storage.LegendEntry{
+		Tag:     storage.KeyTagKem,
+		Type:    "ML-KEM-768",
+		Created: time.Now(),
+	}); err != nil {
+		return fmt.Errorf("failed to update legend: %w", err)
+	}
+
+	payload := common.RegisterRequest{
+		Username:       username,
+		IdentityPk:     pkBytes,
+		KemPk:          kemEkBytes,
+		KemPkSignature: kemPkSig,
+	}
+
 	status, body, err := apiService.RawRequest("POST", "/auth/register", payload, map[string]string{"Content-Type": "application/json"})
 	if err != nil {
 		return fmt.Errorf("failed to register: %w", err)
 	}
-
 	if status != http.StatusCreated {
 		if status == http.StatusConflict {
 			return client.ErrUsernameTaken

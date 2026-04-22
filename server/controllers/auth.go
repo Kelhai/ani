@@ -7,7 +7,6 @@ import (
 	"net/http"
 
 	"github.com/Kelhai/ani/common"
-	"github.com/google/uuid"
 	"github.com/labstack/echo/v5"
 )
 
@@ -16,7 +15,7 @@ func setupAuthRoutes(e *echo.Echo) {
 
 	g.POST("/login", login)
 	g.POST("/register", register)
-	g.GET("/user/:userId", getUser, SessionMiddleware)
+	g.GET("/user/:username", getUser, SessionMiddleware)
 }
 
 func login(c *echo.Context) error {
@@ -55,7 +54,7 @@ func register(c *echo.Context) error {
 		return c.String(http.StatusBadRequest, fmt.Sprintf("Bad json: %s", err.Error()))
 	}
 
-	user, err := authService.CreateUser(bodyUser.Username, bodyUser.IdentityPk)
+	user, err := authService.CreateUser(bodyUser.Username, bodyUser.IdentityPk, bodyUser.KemPk, bodyUser.KemPkSignature)
 	if err != nil {
 		return c.String(http.StatusConflict, "User already exists")
 	}
@@ -64,18 +63,14 @@ func register(c *echo.Context) error {
 }
 
 func getUser(c *echo.Context) error {
-	userId, err := uuid.Parse(c.Param("userId"))
-	if err != nil {
-		return echo.NewHTTPError(http.StatusBadRequest, "invalid user id")
+	username := c.Param("username")
+	if len(username) < 4 {
+		return echo.NewHTTPError(http.StatusBadRequest, "invalid username")
 	}
 
-	user, err := authService.GetUserById(userId)
+	user, err := authService.GetUserByUsername(username)
 	if err != nil {
 		return echo.NewHTTPError(http.StatusNotFound, "user not found")
 	}
-	return c.JSON(http.StatusOK, struct {
-		Username string `json:"username"`
-	}{
-		Username: user.Username,
-	})
+	return c.JSON(http.StatusOK, user)
 }

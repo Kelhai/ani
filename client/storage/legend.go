@@ -14,6 +14,7 @@ type KeyTag string
 
 const (
 	KeyTagIdentity KeyTag = "identity"
+	KeyTagKem KeyTag = "kem"
 	KeyTagSenderKey KeyTag = "sender_key"
 	KeyTagRatchet   KeyTag = "ratchet"
 )

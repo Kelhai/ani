@@ -12,19 +12,22 @@ import (
 type User struct {
 	bun.BaseModel `bun:"table:users" json:"-"`
 
-	Id           uuid.UUID `bun:"id,pk,type:uuid" json:"id"`
-	Username     string    `bun:"username,unique,notnull" json:"username"`
-	IdentityPk   []byte    `bun:"identity_pk,notnull" json:"identity_pk"`
+	Id             uuid.UUID `bun:"id,pk,type:uuid" json:"id"`
+	Username       string    `bun:"username,unique,notnull" json:"username"`
+	IdentityPk     []byte    `bun:"identity_pk,notnull" json:"identity_pk"`
+	KemPk          []byte    `bun:"kem_pk,notnull" json:"kem_pk"`
+	KemPkSignature []byte    `bun:"kem_pk_sig,notnull" json:"kem_pk_sig"`
 }
 
 type RegisterRequest struct {
-	Username   string `json:"username"`
-	IdentityPk []byte `json:"identity_pk"`
+	Username       string `json:"username"`
+	IdentityPk     []byte `json:"identity_pk"`
+	KemPk          []byte `json:"kem_pk"`
+	KemPkSignature []byte `json:"kem_pk_sig"`
 }
 
 type AuthBlob struct {
 	SignatureAlgorithm string    `json:"s_type"`   // we only support "ML-DSA-87" for now
-	//HashingAlgorithm   string    `json:"h_type"`   // "" for ML-DSA-87
 	Username           string    `json:"username"`
 	SignedTime         time.Time `json:"s_time"`
 	TimeToLive         time.Time `json:"ttl"`
