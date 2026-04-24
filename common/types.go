@@ -63,6 +63,13 @@ type RatchetHeader struct {
 	SenderKemPk   []byte `json:"kem_pub,omitempty"`
 }
 
+type DecryptedMessage struct {
+	Id uuid.UUID
+	Sender string
+	ConversationId uuid.UUID
+	Content string
+}
+
 type ShortMessage struct {
 	Id             uuid.UUID     `json:"id"`
 	Sender         string        `json:"sender"`

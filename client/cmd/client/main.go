@@ -11,7 +11,6 @@ import (
 	"github.com/Kelhai/ani/client/config"
 	"github.com/Kelhai/ani/client/controllers"
 	"github.com/Kelhai/ani/client/services"
-	"github.com/Kelhai/ani/client/storage"
 	"github.com/Kelhai/ani/common"
 	"github.com/charmbracelet/bubbles/textinput"
 	"github.com/charmbracelet/bubbles/viewport"
@@ -258,11 +257,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 		now := time.Now()
 
-		store, _ := storage.LoadConversationStore(m.username, m.convId)
-
-		m.chatLines = nil
-
-		for _, rm := range store.Messages {
+		for _, rm := range msg.Messages {
 			var line string
 			if rm.Sender == m.username {
 				line = myMsgStyle.Render(rm.Sender+": ") + rm.Content
@@ -711,6 +706,11 @@ func main() {
 		os.Exit(1)
 	}
 
+	f, err := os.OpenFile("debug.log", os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0644)
+	if err != nil {
+		panic(err)
+	}
+	log.SetOutput(f)
 	services.SetupApiService()
 
 	p := tea.NewProgram(

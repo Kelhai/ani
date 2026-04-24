@@ -23,7 +23,7 @@ type ConversationCreatedMsg struct {
 	Err error
 }
 type MessagesLoadedMsg struct {
-	Messages      []common.ShortMessage
+	Messages      []common.DecryptedMessage
 	LastMessageId *uuid.UUID
 	Err           error
 }

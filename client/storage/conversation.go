@@ -10,9 +10,11 @@ import (
 )
 
 type StoredMessage struct {
-	Id      uuid.UUID `json:"id"`
-	Sender  string    `json:"sender"`
-	Content string    `json:"content"`
+	Id         uuid.UUID `json:"id"`
+	Sender     string    `json:"sender"`
+	Ciphertext []byte    `json:"ciphertext"`
+	Header     []byte    `json:"header"`
+	Signature  []byte    `json:"signature"`
 }
 
 type ConversationStore struct {
