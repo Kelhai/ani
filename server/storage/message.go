@@ -50,7 +50,6 @@ type Conversation struct {
 
 	Id   uuid.UUID `bun:"id,pk,type:uuid"`
 	Key  string    `bun:"key,unique,notnull"`
-	Xmax int       `bun:"xmax,scanonly"`
 }
 
 type ConversationMember struct {
@@ -109,39 +108,36 @@ func (pgs PgStorage) GetOrCreateConversation(members []uuid.UUID) (*Conversation
 		return nil, common.ErrUuidFailed
 	}
 
-	newConversation := &Conversation{
+	conversation := &Conversation{
 		Id:  id,
 		Key: conversationKey(members),
 	}
 
 	_, err = pgs.db.NewInsert().
-		Model(newConversation).
+		Model(conversation).
 		On("CONFLICT (key) DO UPDATE SET key = EXCLUDED.key").
-		Returning("id, key, xmax").
+		Returning("id, key").
 		Exec(context.Background())
 	if err != nil {
 		return nil, fmt.Errorf("failed to get or create conversation: %w", err)
 	}
 
-	// pg native
-	isNew := newConversation.Xmax == 0
-	if isNew {
-		conversationMembers := make([]ConversationMember, len(members))
-		for i, member := range members {
-			conversationMembers[i] = ConversationMember{
-				ConversationId: newConversation.Id,
-				UserId:         member,
-			}
-		}
-		_, err = pgs.db.NewInsert().
-			Model(&conversationMembers).
-			Exec(context.Background())
-		if err != nil {
-			return nil, fmt.Errorf("failed to insert conversation members: %w", err)
+	conversationMembers := make([]ConversationMember, len(members))
+	for i, member := range members {
+		conversationMembers[i] = ConversationMember{
+			ConversationId: conversation.Id,
+			UserId:         member,
 		}
 	}
+	_, err = pgs.db.NewInsert().
+		Model(&conversationMembers).
+		On("CONFLICT DO NOTHING").
+		Exec(context.Background())
+	if err != nil {
+		return nil, fmt.Errorf("failed to insert conversation members: %w", err)
+	}
 
-	return newConversation, nil
+	return conversation, nil
 }
 
 func (pgs PgStorage) GetConversationsByUserId(userId uuid.UUID) ([]Conversation, error) {

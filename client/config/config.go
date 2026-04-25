@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"log"
 	"os"
+	"path/filepath"
 
 	"github.com/joho/godotenv"
 )
@@ -12,20 +13,28 @@ var (
 	BaseUrl    string
 	serverHost string
 	serverPort string
+	AniHome    string
 )
 
 func SetupConfig() error {
-	home, err := os.UserHomeDir()
-	if err != nil {
-		return fmt.Errorf("Failed to get homedir: %w", err)
+	var found bool
+	var err error
+	var home string
+
+	home, found = os.LookupEnv("ANI_HOME")
+	if !found {
+		home, err = os.UserHomeDir()
+		if err != nil {
+			return fmt.Errorf("Failed to get homedir: %w", err)
+		}
 	}
 
-	err = godotenv.Load(home + "/.ani/.env")
+	AniHome = filepath.Join(home, ".ani")
+
+	err = godotenv.Load(filepath.Join(AniHome, ".env"))
 	if err != nil {
 		return fmt.Errorf("Failed to load ~/.ani/.env: %w", err)
 	}
-
-	var found bool
 
 	serverHost, found = os.LookupEnv("SERVER_HOST")
 	if !found {

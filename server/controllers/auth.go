@@ -16,13 +16,13 @@ func setupAuthRoutes(e *echo.Echo) {
 
 	g.POST("/login", login)
 	g.POST("/register", register)
-	g.GET("/user/:userId", getUser, SessionMiddleware)
+	g.GET("/user/by-id/:userId", getUser, SessionMiddleware)
+	g.GET("/user/:username", getUserByUsername, SessionMiddleware)
 }
 
 func login(c *echo.Context) error {
 	var envelope common.AuthEnvelope
-	err := c.Bind(&envelope)
-	if err != nil {
+	if err := c.Bind(&envelope); err != nil {
 		return c.String(http.StatusBadRequest, fmt.Sprintf("Bad json: %s", err.Error()))
 	}
 
@@ -49,13 +49,11 @@ func login(c *echo.Context) error {
 
 func register(c *echo.Context) error {
 	var bodyUser common.RegisterRequest
-
-	err := c.Bind(&bodyUser)
-	if err != nil {
+	if err := c.Bind(&bodyUser); err != nil {
 		return c.String(http.StatusBadRequest, fmt.Sprintf("Bad json: %s", err.Error()))
 	}
 
-	user, err := authService.CreateUser(bodyUser.Username, bodyUser.IdentityPk)
+	user, err := authService.CreateUser(bodyUser.Username, bodyUser.IdentityPk, bodyUser.KemPk, bodyUser.KemPkSignature)
 	if err != nil {
 		return c.String(http.StatusConflict, "User already exists")
 	}
@@ -75,7 +73,27 @@ func getUser(c *echo.Context) error {
 	}
 	return c.JSON(http.StatusOK, struct {
 		Username string `json:"username"`
-	}{
-		Username: user.Username,
+	}{Username: user.Username})
+}
+
+// getUserByUsername returns the full public key bundle for a username. This is
+// what clients call to initiate a session with someone.
+func getUserByUsername(c *echo.Context) error {
+	username := c.Param("username")
+	if username == "" {
+		return echo.NewHTTPError(http.StatusBadRequest, "missing username")
+	}
+
+	user, err := authService.GetUserByUsername(username)
+	if err != nil {
+		return echo.NewHTTPError(http.StatusNotFound, "user not found")
+	}
+
+	return c.JSON(http.StatusOK, common.User{
+		Id:             user.Id,
+		Username:       user.Username,
+		IdentityPk:     user.IdentityPk,
+		KemPk:          user.KemPk,
+		KemPkSignature: user.KemPkSignature,
 	})
 }

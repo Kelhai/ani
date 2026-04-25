@@ -16,10 +16,7 @@ func DeriveMasterKey(password, username string) []byte {
 }
 
 func SaveKeyPair(username string, keyId uuid.UUID, pub, priv []byte) error {
-	dir, err := userDir(username)
-	if err != nil {
-		return err
-	}
+	dir := userDir(username)
 	if err := os.MkdirAll(dir, 0700); err != nil {
 		return fmt.Errorf("failed to create user dir: %w", err)
 	}
@@ -34,10 +31,7 @@ func SaveKeyPair(username string, keyId uuid.UUID, pub, priv []byte) error {
 }
 
 func LoadPubKey(username string, keyId uuid.UUID) ([]byte, error) {
-	dir, err := userDir(username)
-	if err != nil {
-		return nil, err
-	}
+	dir := userDir(username)
 	data, err := os.ReadFile(filepath.Join(dir, keyId.String()+".pub"))
 	if err != nil {
 		return nil, fmt.Errorf("failed to read public key: %w", err)
@@ -46,10 +40,7 @@ func LoadPubKey(username string, keyId uuid.UUID) ([]byte, error) {
 }
 
 func LoadPrivKey(username string, keyId uuid.UUID) ([]byte, error) {
-	dir, err := userDir(username)
-	if err != nil {
-		return nil, err
-	}
+	dir := userDir(username)
 	encrypted, err := os.ReadFile(filepath.Join(dir, keyId.String()))
 	if err != nil {
 		return nil, fmt.Errorf("failed to read private key: %w", err)
@@ -58,10 +49,7 @@ func LoadPrivKey(username string, keyId uuid.UUID) ([]byte, error) {
 }
 
 func SaveSymmetricKey(username string, keyId uuid.UUID, key []byte) error {
-	dir, err := userDir(username)
-	if err != nil {
-		return err
-	}
+	dir := userDir(username)
 	if err := os.MkdirAll(dir, 0700); err != nil {
 		return err
 	}
@@ -73,10 +61,7 @@ func SaveSymmetricKey(username string, keyId uuid.UUID, key []byte) error {
 }
 
 func LoadSymmetricKey(username string, keyId uuid.UUID) ([]byte, error) {
-	dir, err := userDir(username)
-	if err != nil {
-		return nil, err
-	}
+	dir := userDir(username)
 	encrypted, err := os.ReadFile(filepath.Join(dir, keyId.String()))
 	if err != nil {
 		return nil, fmt.Errorf("failed to read symmetric key: %w", err)

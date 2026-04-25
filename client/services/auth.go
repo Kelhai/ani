@@ -1,6 +1,7 @@
 package services
 
 import (
+	"crypto/mlkem"
 	"crypto/rand"
 	"encoding/json"
 	"fmt"
@@ -23,25 +24,35 @@ func (_ AuthService) Register(username, password string) error {
 	if err != nil {
 		return fmt.Errorf("failed to generate identity keypair: %w", err)
 	}
-
 	pkBytes, err := pk.MarshalBinary()
 	if err != nil {
-		return fmt.Errorf("failed to marshal public key: %w", err)
+		return fmt.Errorf("failed to marshal identity public key: %w", err)
 	}
 	skBytes, err := sk.MarshalBinary()
 	if err != nil {
-		return fmt.Errorf("failed to marshal private key: %w", err)
+		return fmt.Errorf("failed to marshal identity private key: %w", err)
 	}
 
-	keyId, err := uuid.NewV7()
+	kemDk, err := mlkem.GenerateKey768()
 	if err != nil {
-		return fmt.Errorf("failed to generate key UUID: %w", err)
+		return fmt.Errorf("failed to generate KEM keypair: %w", err)
+	}
+	kemEkBytes := kemDk.EncapsulationKey().Bytes()
+	kemDkBytes := kemDk.Bytes()
+
+	kemPkSig, err := sk.Sign(rand.Reader, kemEkBytes, nil)
+	if err != nil {
+		return fmt.Errorf("failed to sign KEM public key: %w", err)
 	}
 
-	if err := storage.SaveKeyPair(username, keyId, pkBytes, skBytes); err != nil {
+	identityKeyId, err := uuid.NewV7()
+	if err != nil {
+		return fmt.Errorf("failed to generate identity key UUID: %w", err)
+	}
+	if err := storage.SaveKeyPair(username, identityKeyId, pkBytes, skBytes); err != nil {
 		return fmt.Errorf("failed to save identity keypair: %w", err)
 	}
-	if err := storage.AddLegendEntry(username, keyId, storage.LegendEntry{
+	if err := storage.AddLegendEntry(username, identityKeyId, storage.LegendEntry{
 		Tag:     storage.KeyTagIdentity,
 		Type:    "ML-DSA-87",
 		Created: time.Now(),
@@ -49,27 +60,45 @@ func (_ AuthService) Register(username, password string) error {
 		return fmt.Errorf("failed to update legend: %w", err)
 	}
 
-	payload := common.RegisterRequest{
-		Username:   username,
-		IdentityPk: pkBytes,
+	kemKeyId, err := uuid.NewV7()
+	if err != nil {
+		return fmt.Errorf("failed to generate KEM key UUID: %w", err)
 	}
-	status, body, err := apiService.RawRequest("POST", "/auth/register", payload, map[string]string{"Content-Type": "application/json"})
+	if err := storage.SaveKeyPair(username, kemKeyId, kemEkBytes, kemDkBytes); err != nil {
+		return fmt.Errorf("failed to save KEM keypair: %w", err)
+	}
+	if err := storage.AddLegendEntry(username, kemKeyId, storage.LegendEntry{
+		Tag:     storage.KeyTagKem,
+		Type:    "ML-KEM-768",
+		Created: time.Now(),
+	}); err != nil {
+		return fmt.Errorf("failed to update legend: %w", err)
+	}
+
+	payload := common.RegisterRequest{
+		Username:       username,
+		IdentityPk:     pkBytes,
+		KemPk:          kemEkBytes,
+		KemPkSignature: kemPkSig,
+	}
+
+	status, body, err := apiService.RawRequest("POST", "/auth/register", payload, map[string]string{
+		"Content-Type": "application/json",
+	})
 	if err != nil {
 		return fmt.Errorf("failed to register: %w", err)
 	}
-
+	if status == http.StatusConflict {
+		return client.ErrUsernameTaken
+	}
 	if status != http.StatusCreated {
-		if status == http.StatusConflict {
-			return client.ErrUsernameTaken
-		}
-		return fmt.Errorf("invalid status code: %d", status)
+		return fmt.Errorf("unexpected status: %d", status)
 	}
 
 	user := new(common.User)
 	if err := json.Unmarshal(body, user); err != nil {
 		return fmt.Errorf("failed to unmarshal user response: %w", err)
 	}
-
 	client.User = user
 	return nil
 }
@@ -99,31 +128,27 @@ func (_ AuthService) Login(username, password string) error {
 		TimeToLive:         time.Now().Add(5 * time.Minute),
 		Uuid:               uuid.Must(uuid.NewV7()),
 	}
-
 	blobBytes, err := json.Marshal(blob)
 	if err != nil {
 		return fmt.Errorf("failed to marshal auth blob: %w", err)
 	}
-
 	sig, err := sk.Sign(rand.Reader, blobBytes, nil)
 	if err != nil {
 		return fmt.Errorf("failed to sign auth blob: %w", err)
 	}
 
-	envelope := common.AuthEnvelope{
+	status, body, err := apiService.RawRequest("POST", "/auth/login", common.AuthEnvelope{
 		Blob:      blob,
 		Signature: sig,
-	}
-
-	status, body, err := apiService.RawRequest("POST", "/auth/login", envelope, map[string]string{"Content-Type": "application/json"})
+	}, map[string]string{"Content-Type": "application/json"})
 	if err != nil {
 		return fmt.Errorf("failed to login: %w", err)
 	}
+	if status == http.StatusUnauthorized {
+		return client.ErrLoginFailed
+	}
 	if status != http.StatusOK {
-		if status == http.StatusUnauthorized {
-			return client.ErrLoginFailed
-		}
-		return fmt.Errorf("invalid status code: %d", status)
+		return fmt.Errorf("unexpected status: %d", status)
 	}
 
 	session := new(common.Session)
@@ -131,10 +156,38 @@ func (_ AuthService) Login(username, password string) error {
 		return fmt.Errorf("failed to unmarshal session: %w", err)
 	}
 
+	SessionToken = session.Id
 	client.User = &common.User{
 		Id:       session.UserId,
 		Username: username,
 	}
-	SessionToken = session.Id
+
+	if err := storage.SaveSession(storage.SavedSession{
+		Username:  username,
+		Token:     session.Id,
+		UserId:    session.UserId,
+		ExpiresAt: session.ExpiresAt,
+	}); err != nil {
+		return fmt.Errorf("failed to save session: %w", err)
+	}
+
 	return nil
+}
+
+func (_ AuthService) GetUserBundle(username string) (*common.User, error) {
+	status, body, err := apiService.GET("/auth/user/"+username, nil)
+	if err != nil {
+		return nil, fmt.Errorf("failed to fetch user bundle: %w", err)
+	}
+	if status == http.StatusNotFound {
+		return nil, client.ErrUserNotFound
+	}
+	if status != http.StatusOK {
+		return nil, client.ErrUnknownErr
+	}
+	user := new(common.User)
+	if err := json.Unmarshal(body, user); err != nil {
+		return nil, fmt.Errorf("failed to unmarshal user bundle: %w", err)
+	}
+	return user, nil
 }

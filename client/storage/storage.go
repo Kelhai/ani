@@ -6,35 +6,19 @@ import (
 	"crypto/sha256"
 	"fmt"
 	"log"
-	"os"
 	"path/filepath"
 
+	"github.com/Kelhai/ani/client/config"
 	"github.com/google/uuid"
 	"golang.org/x/crypto/chacha20poly1305"
 )
 
-func aniDir() (string, error) {
-	home, err := os.UserHomeDir()
-	if err != nil {
-		return "", fmt.Errorf("failed to get home dir: %w", err)
-	}
-	return filepath.Join(home, ".ani"), nil
+func userDir(username string) string {
+	return filepath.Join(config.AniHome, username)
 }
 
-func userDir(username string) (string, error) {
-	base, err := aniDir()
-	if err != nil {
-		return "", err
-	}
-	return filepath.Join(base, username), nil
-}
-
-func groupDir(groupId uuid.UUID) (string, error) {
-	base, err := aniDir()
-	if err != nil {
-		return "", err
-	}
-	return filepath.Join(base, "groups", groupId.String()), nil
+func groupDir(groupId uuid.UUID) string {
+	return filepath.Join(config.AniHome, "groups", groupId.String())
 }
 
 func encrypt(plaintext, key, aad []byte) ([]byte, error) {
