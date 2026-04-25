@@ -67,15 +67,18 @@ func (as AuthService) GetSessionByToken(token uuid.UUID) (*common.Session, error
 	return session, nil
 }
 
-func (as AuthService) CreateUser(username string, identityPk []byte) (*common.User, error) {
+func (as AuthService) CreateUser(username string, identityPk, kemPk, kemPkSig []byte) (*common.User, error) {
 	if len(identityPk) != mldsa87.PublicKeySize {
 		return nil, fmt.Errorf("invalid identity key size")
 	}
-
-	// validate it's actually a parseable key
 	pk := new(mldsa87.PublicKey)
 	if err := pk.UnmarshalBinary(identityPk); err != nil {
 		return nil, fmt.Errorf("invalid identity key: %w", err)
+	}
+
+	// verify the KEM public key is signed by the identity key
+	if !mldsa87.Verify(pk, kemPk, nil, kemPkSig) {
+		return nil, fmt.Errorf("KEM key signature invalid")
 	}
 
 	id, err := uuid.NewV7()
@@ -85,15 +88,15 @@ func (as AuthService) CreateUser(username string, identityPk []byte) (*common.Us
 	}
 
 	user := common.User{
-		Id:         id,
-		Username:   username,
-		IdentityPk: identityPk,
+		Id:             id,
+		Username:       username,
+		IdentityPk:     identityPk,
+		KemPk:          kemPk,
+		KemPkSignature: kemPkSig,
 	}
-
 	if err = pgStorage.AddUser(user); err != nil {
 		return nil, err
 	}
-
 	return &user, nil
 }
 
@@ -105,6 +108,10 @@ func (as AuthService) GetUsernamesByIds(userIds []uuid.UUID) (map[uuid.UUID]stri
 	}
 
 	return users, nil
+}
+
+func (as AuthService) GetUserByUsername(username string) (*common.User, error) {
+	return pgStorage.GetUserByUsername(username)
 }
 
 func (as AuthService) GetUserById(userId uuid.UUID) (*common.User, error) {

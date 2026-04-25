@@ -13,7 +13,8 @@ import (
 type KeyTag string
 
 const (
-	KeyTagIdentity KeyTag = "identity"
+	KeyTagIdentity  KeyTag = "identity"
+	KeyTagKem       KeyTag = "kem"
 	KeyTagSenderKey KeyTag = "sender_key"
 	KeyTagRatchet   KeyTag = "ratchet"
 )
@@ -32,18 +33,11 @@ type Legend struct {
 const legendVersion = "v0.1.0"
 
 func legendPath(username string) (string, error) {
-	dir, err := userDir(username)
-	if err != nil {
-		return "", err
-	}
-	return filepath.Join(dir, ".legend"), nil
+	return filepath.Join(userDir(username), ".legend"), nil
 }
 
 func groupLegendPath(groupId uuid.UUID) (string, error) {
-	dir, err := groupDir(groupId)
-	if err != nil {
-		return "", err
-	}
+	dir := groupDir(groupId)
 	return filepath.Join(dir, ".legend"), nil
 }
 
@@ -143,4 +137,22 @@ func FindKeyByTag(username string, tag KeyTag) (uuid.UUID, *LegendEntry, error) 
 		}
 	}
 	return uuid.Nil, nil, fmt.Errorf("no key with tag %s found", tag)
+}
+
+func FindKeyByPeer(username string, tag KeyTag, peer string) (uuid.UUID, *LegendEntry, error) {
+	legend, err := loadLegend(username)
+	if err != nil {
+		return uuid.Nil, nil, err
+	}
+	for idStr, entry := range legend.Keys {
+		if entry.Tag == tag && entry.Type == peer {
+			id, err := uuid.Parse(idStr)
+			if err != nil {
+				return uuid.Nil, nil, fmt.Errorf("invalid UUID in legend: %w", err)
+			}
+			e := entry
+			return id, &e, nil
+		}
+	}
+	return uuid.Nil, nil, fmt.Errorf("no key with tag %s for peer %s found", tag, peer)
 }
